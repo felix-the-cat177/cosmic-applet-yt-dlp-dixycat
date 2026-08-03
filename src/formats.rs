@@ -1,6 +1,18 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::fmt::Display;
 
-#[allow(clippy::upper_case_acronyms)]
+// Re-export the upstream types used by `From` impls so that any path
+// adjustments only need to happen here if the crate reshuffles modules.
+use yt_dlp::model::selector::{
+    AudioCodecPreference as YtAudioCodec, AudioQuality as YtAudioQuality,
+    VideoCodecPreference as YtVideoCodec, VideoQuality as YtVideoQuality,
+};
+
+// ---------------------------------------------------------------------------
+// Video quality (UI-facing labels)
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum VideoQuality {
     #[default]
@@ -23,17 +35,21 @@ impl Display for VideoQuality {
     }
 }
 
-impl From<VideoQuality> for yt_dlp::model::VideoQuality {
+impl From<VideoQuality> for YtVideoQuality {
     fn from(val: VideoQuality) -> Self {
         match val {
-            VideoQuality::Highest => yt_dlp::model::VideoQuality::Best,
-            VideoQuality::FHD => yt_dlp::model::VideoQuality::High,
-            VideoQuality::HD => yt_dlp::model::VideoQuality::Medium,
-            VideoQuality::SD => yt_dlp::model::VideoQuality::Low,
-            VideoQuality::Lowest => yt_dlp::model::VideoQuality::Worst,
+            VideoQuality::Highest => YtVideoQuality::Best,
+            VideoQuality::FHD => YtVideoQuality::High,
+            VideoQuality::HD => YtVideoQuality::Medium,
+            VideoQuality::SD => YtVideoQuality::Low,
+            VideoQuality::Lowest => YtVideoQuality::Worst,
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Video codec (UI-facing labels)
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum VideoCodec {
@@ -55,16 +71,20 @@ impl Display for VideoCodec {
     }
 }
 
-impl From<VideoCodec> for yt_dlp::model::VideoCodecPreference {
+impl From<VideoCodec> for YtVideoCodec {
     fn from(val: VideoCodec) -> Self {
         match val {
-            VideoCodec::AV1 => yt_dlp::model::VideoCodecPreference::AV1,
-            VideoCodec::AVC1 => yt_dlp::model::VideoCodecPreference::AVC1,
-            VideoCodec::VP9 => yt_dlp::model::VideoCodecPreference::VP9,
-            VideoCodec::Any => yt_dlp::model::VideoCodecPreference::Any,
+            VideoCodec::AV1 => YtVideoCodec::AV1,
+            VideoCodec::AVC1 => YtVideoCodec::AVC1,
+            VideoCodec::VP9 => YtVideoCodec::VP9,
+            VideoCodec::Any => YtVideoCodec::Any,
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Audio quality (UI-facing labels)
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum AudioQuality {
@@ -88,17 +108,21 @@ impl Display for AudioQuality {
     }
 }
 
-impl From<AudioQuality> for yt_dlp::model::AudioQuality {
+impl From<AudioQuality> for YtAudioQuality {
     fn from(val: AudioQuality) -> Self {
         match val {
-            AudioQuality::Best => yt_dlp::model::AudioQuality::Best,
-            AudioQuality::High => yt_dlp::model::AudioQuality::High,
-            AudioQuality::Medium => yt_dlp::model::AudioQuality::Medium,
-            AudioQuality::Low => yt_dlp::model::AudioQuality::Low,
-            AudioQuality::Worst => yt_dlp::model::AudioQuality::Worst,
+            AudioQuality::Best => YtAudioQuality::Best,
+            AudioQuality::High => YtAudioQuality::High,
+            AudioQuality::Medium => YtAudioQuality::Medium,
+            AudioQuality::Low => YtAudioQuality::Low,
+            AudioQuality::Worst => YtAudioQuality::Worst,
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Audio codec (UI-facing labels)
+// ---------------------------------------------------------------------------
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
@@ -121,13 +145,13 @@ impl Display for AudioCodec {
     }
 }
 
-impl From<AudioCodec> for yt_dlp::model::AudioCodecPreference {
+impl From<AudioCodec> for YtAudioCodec {
     fn from(val: AudioCodec) -> Self {
         match val {
-            AudioCodec::Opus => yt_dlp::model::AudioCodecPreference::Opus,
-            AudioCodec::ACC => yt_dlp::model::AudioCodecPreference::AAC,
-            AudioCodec::MP3 => yt_dlp::model::AudioCodecPreference::MP3,
-            AudioCodec::Any => yt_dlp::model::AudioCodecPreference::Any,
+            AudioCodec::Opus => YtAudioCodec::Opus,
+            AudioCodec::ACC => YtAudioCodec::AAC,
+            AudioCodec::MP3 => YtAudioCodec::MP3,
+            AudioCodec::Any => YtAudioCodec::Any,
         }
     }
 }

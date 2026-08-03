@@ -1,24 +1,21 @@
 [package]
 name = "cosmic-ext-applet-yt-dlp"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 authors = ["D-Brox <davidfbg00@gmail.com>"]
 license = "GPL-3.0-only"
 description = "A simple yt-dlp GUI for the COSMIC DE"
 
 [dependencies]
-ashpd = "0.11.0"
-i18n-embed-fl = "0.9.1"
-m3u8-rs = "6.0.0"
-notify-rust = "4.11.7"
-rust-embed = "8.5.0"
-tempfile = "3.19.1"
-tokio = "1.44.2"
-tokio-stream = "0.1.17"
-url = "2.5.4"
-xdg = "2.5.2"
-xdg-user = "0.2.1"
-yt-dlp = { git = "https://github.com/D-Brox/yt-dlp-rs" }
+ashpd = "0.11"
+i18n-embed-fl = "0.9"
+notify-rust = "4"
+rust-embed = "8"
+tokio = { version = "1", features = ["full"] }
+url = "2"
+xdg = "2.5"
+xdg-user = "0.2"
+yt-dlp = "2.8"
 
 [dependencies.i18n-embed]
 version = "0.15"
@@ -54,5 +51,5 @@ assets = [
 glibc = "*"
 libxkbcommon = "*"
 nscd = "*"
-openssl3-libs = "*"
+openssl-libs = "*"
 xz-libs = "*"

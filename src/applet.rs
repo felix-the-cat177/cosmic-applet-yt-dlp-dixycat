@@ -8,7 +8,7 @@ use cosmic::cosmic_theme::Spacing;
 use cosmic::iced::platform_specific::shell::wayland::commands::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
 use cosmic::iced::{Alignment, Length, Limits};
-use cosmic::iced_widget::{button, column, pick_list, row};
+use cosmic::iced::widget::{button, column, pick_list, row};
 use cosmic::widget::segmented_button::{Entity, SingleSelectModel};
 use cosmic::widget::text::body;
 use cosmic::widget::{divider, segmented_control, text_input};
@@ -260,63 +260,69 @@ impl Application for Ytdlp {
                         .icon("multimedia-video-player-symbolic")
                         .finalize();
 
-                    let fetcher = fetcher::with_output_dir(&lib_dir, output_dir);
-                    let res = fetcher.fetch_video_infos(url.clone()).await;
-                    let Ok(video) = res else {
+                    let downloader = fetcher::with_output_dir(&lib_dir, output_dir).await;
+                    let video =
+                        match downloader.generic_extractor().fetch_video(&url).await {
+                            Ok(v) => v,
+                            Err(_) => {
+                                let _ = notify
+                                    .summary(fl_str!("metadata-failed"))
+                                    .show_async()
+                                    .await;
+                                return Action::App(Message::Finished);
+                            }
+                        };
+
+                    let title = video.title.clone();
+
+                    // Validate that a suitable format exists before downloading.
+                    let has_format = if video_selected {
+                        video.select_video_format(video_quality, video_codec).is_some()
+                    } else {
+                        video
+                            .select_audio_format(audio_quality, audio_codec)
+                            .is_some()
+                    };
+
+                    if !has_format {
                         let _ = notify
-                            .summary(fl_str!("metadata-failed"))
+                            .summary(fl_str!("missing-format"))
                             .show_async()
                             .await;
                         return Action::App(Message::Finished);
-                    };
-                    let title = video.filename.rsplit_once('.').unwrap().0.to_string();
-
-                    let (Some(format), extension) = (if video_selected {
-                        (video.select_video_format(video_quality, video_codec), "mp4")
-                    } else {
-                        (
-                            video.select_audio_format(audio_quality, audio_codec),
-                            ".m4a",
-                        )
-                    }) else {
-                        let _ = notify.summary(fl_str!("missing-format")).show_async().await;
-                        return Action::App(Message::Finished);
-                    };
-                    let download_failed = {
-                        let title = title.clone();
-                        async || {
-                            let _ = notify
-                                .summary(fl_str!("download-failed", title = title))
-                                .show_async()
-                                .await;
-                            Action::App(Message::Finished)
-                        }
-                    };
-
-                    if format.is_manifest() {
-                        if !fetcher::manifest(
-                            url,
-                            fetcher.output_dir,
-                            fetcher.libraries.ffmpeg,
-                            &title,
-                            video_selected,
-                        )
-                        .await
-                        {
-                            return download_failed().await;
-                        }
-                    } else if fetcher
-                        .download_format(format, format!("{title}.{extension}"))
-                        .await
-                        .is_err()
-                    {
-                        return download_failed().await;
                     }
 
-                    let _ = notify
-                        .summary(fl_str!("finished-download", title = title))
-                        .show_async()
-                        .await;
+                    let result = if video_selected {
+                        downloader
+                            .download(&video, format!("{title}.mp4"))
+                            .video_quality(video_quality)
+                            .video_codec(video_codec)
+                            .audio_quality(audio_quality)
+                            .audio_codec(audio_codec)
+                            .execute()
+                            .await
+                    } else {
+                        downloader
+                            .download_audio_stream_with_quality(
+                                &video,
+                                format!("{title}.m4a"),
+                                audio_quality,
+                                audio_codec,
+                            )
+                            .await
+                    };
+
+                    if result.is_err() {
+                        let _ = notify
+                            .summary(fl_str!("download-failed", title = title))
+                            .show_async()
+                            .await;
+                    } else {
+                        let _ = notify
+                            .summary(fl_str!("finished-download", title = title))
+                            .show_async()
+                            .await;
+                    }
                     Action::App(Message::Finished)
                 });
             }
