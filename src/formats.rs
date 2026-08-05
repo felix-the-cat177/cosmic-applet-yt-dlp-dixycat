@@ -128,17 +128,29 @@ impl From<AudioQuality> for YtAudioQuality {
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum AudioCodec {
     Opus,
-    ACC,
+    AAC,
     MP3,
     #[default]
     Any,
+}
+
+impl AudioCodec {
+    /// Returns the recommended file extension for this audio codec.
+    pub fn extension(&self) -> &'static str {
+        match self {
+            AudioCodec::Opus => "opus",
+            AudioCodec::AAC => "m4a",
+            AudioCodec::MP3 => "mp3",
+            AudioCodec::Any => "m4a",
+        }
+    }
 }
 
 impl Display for AudioCodec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AudioCodec::Opus => write!(f, "Opus"),
-            AudioCodec::ACC => write!(f, "ACC"),
+            AudioCodec::AAC => write!(f, "AAC"),
             AudioCodec::MP3 => write!(f, "MP3"),
             AudioCodec::Any => write!(f, "Any"),
         }
@@ -149,7 +161,7 @@ impl From<AudioCodec> for YtAudioCodec {
     fn from(val: AudioCodec) -> Self {
         match val {
             AudioCodec::Opus => YtAudioCodec::Opus,
-            AudioCodec::ACC => YtAudioCodec::AAC,
+            AudioCodec::AAC => YtAudioCodec::AAC,
             AudioCodec::MP3 => YtAudioCodec::MP3,
             AudioCodec::Any => YtAudioCodec::Any,
         }

@@ -25,7 +25,7 @@
       <mimetype>text/plain</mimetype>
     </mimetypes>
     <binaries>
-      <binary>cosmic-ext-applet-yt-dlp</binary>
+      <binary>cosmic-applet-yt-dlp-dixycat</binary>
     </binaries>
   </provides>
 </component>

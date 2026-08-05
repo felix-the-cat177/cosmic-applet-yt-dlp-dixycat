@@ -8,3 +8,12 @@ vendor.tar
 **/*.rs.bk
 
 *.pdb
+
+password.txt
+*.log
+consum*
+
+# IDE / editor
+.vscode/
+.zcode/
+.idea/

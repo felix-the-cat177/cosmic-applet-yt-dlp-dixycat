@@ -1,4 +1,4 @@
-name := 'cosmic-ext-applet-yt-dlp'
+name := 'cosmic-applet-yt-dlp-dixycat'
 export APPID := 'dev.DBrox.CosmicYtdlp'
 import "res/packaging.just"
 

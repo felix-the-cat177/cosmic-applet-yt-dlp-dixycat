@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Cosmic yt-dlp applet
-Exec=cosmic-ext-applet-yt-dlp %F
+Exec=cosmic-applet-yt-dlp-dixycat %F
 Terminal=false
 Type=Application
 StartupNotify=true

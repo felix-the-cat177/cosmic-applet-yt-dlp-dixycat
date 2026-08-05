@@ -10,6 +10,7 @@ use yt_dlp::{
     Downloader,
 };
 
+use cosmic::Application;
 use crate::applet::Ytdlp;
 
 /// Install and cache yt-dlp and ffmpeg binaries, returning the deps directory.
