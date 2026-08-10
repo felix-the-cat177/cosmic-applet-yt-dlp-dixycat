@@ -44,9 +44,16 @@ pub async fn binaries() -> PathBuf {
 pub async fn with_output_dir(lib_dir: &Path, output_dir: PathBuf) -> Downloader {
     let libraries = Libraries::new(lib_dir.join("yt-dlp"), lib_dir.join("ffmpeg"));
 
-    Downloader::builder(libraries, output_dir)
-        .with_timeout(Duration::from_secs(120))
+    let mut dl = Downloader::builder(libraries, output_dir)
+        .with_timeout(Duration::from_secs(300))
         .build()
         .await
-        .expect("Failed to create downloader")
+        .expect("Failed to create downloader");
+
+    // Download up to 4 DASH/HLS fragments in parallel — significantly faster
+    // for YouTube and other adaptive-stream platforms.
+    dl.add_arg("--concurrent-fragments");
+    dl.add_arg("4");
+
+    dl
 }

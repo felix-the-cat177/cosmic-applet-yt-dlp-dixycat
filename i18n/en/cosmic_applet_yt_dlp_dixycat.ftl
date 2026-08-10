@@ -15,6 +15,10 @@ downloading = { $total ->
 }
 start-download = Started downloading { $title }
 finished-download = Finished downloading { $title }
+playlist-fetching = Fetching playlist: { $title }
+playlist-downloading = Playlist { $current }/{ $total } – { $title }
+playlist-finished = Playlist finished: { $title } ({ $count } videos)
+playlist-failed = Playlist failed: { $title }
 missing-format = Invalid format
 browse = Browse
 folder = Download Folder
@@ -23,3 +27,5 @@ post-processing-audio = Processing audio…
 eta-mins-secs = ETA: { $mins }:{ $secs }
 eta-secs = ETA: { $secs }s
 calculating = calculating…
+platforms-tooltip = Supported platforms
+platforms-footer = …and 1800+ sites supported by yt-dlp

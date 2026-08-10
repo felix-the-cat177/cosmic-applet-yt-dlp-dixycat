@@ -15,6 +15,10 @@ downloading = { $total ->
 }
 start-download = Började ladda ner { $title }
 finished-download = Slutförd nedladdning { $title }
+playlist-fetching = Hämtar spellista: { $title }
+playlist-downloading = Spellista { $current }/{ $total } – { $title }
+playlist-finished = Spellista klar: { $title } ({ $count } videor)
+playlist-failed = Spellista misslyckades: { $title }
 missing-format = Ogiltigt format
 browse = Bläddra
 folder = Nedladdningsmapp
@@ -23,3 +27,5 @@ post-processing-audio = Bearbetar ljud…
 eta-mins-secs = ETA: { $mins }:{ $secs }
 eta-secs = ETA: { $secs }s
 calculating = beräknar…
+platforms-tooltip = Plattformar som stöds
+platforms-footer = …och 1800+ webbplatser via yt-dlp

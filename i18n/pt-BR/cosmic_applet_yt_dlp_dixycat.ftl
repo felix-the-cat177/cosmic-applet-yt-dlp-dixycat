@@ -15,6 +15,10 @@ downloading = { $total ->
 }
 start-download = Download iniciado: { $title }
 finished-download = Donwload completo: { $title }
+playlist-fetching = Buscando playlist: { $title }
+playlist-downloading = Playlist { $current }/{ $total } – { $title }
+playlist-finished = Playlist concluída: { $title } ({ $count } vídeos)
+playlist-failed = Falha na playlist: { $title }
 missing-format = Formato inválido
 browse = Browse
 folder = Pasta de Download
@@ -23,3 +27,5 @@ post-processing-audio = Processando áudio…
 eta-mins-secs = estimado: { $mins }:{ $secs }
 eta-secs = estimado: { $secs }s
 calculating = calculando…
+platforms-tooltip = Plataformas suportadas
+platforms-footer = …e mais de 1800 sites suportados pelo yt-dlp

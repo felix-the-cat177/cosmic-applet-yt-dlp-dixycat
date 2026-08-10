@@ -78,6 +78,167 @@ async fn cleanup_temp_files(dir: &std::path::Path) {
     }
 }
 
+/// Runs a single-video download and sends progress + finished events.
+#[allow(clippy::too_many_arguments)]
+async fn run_single_download(
+    download_id: u32,
+    video_selected: bool,
+    url: &str,
+    downloader: &yt_dlp::Downloader,
+    output_dir_ref: &std::path::Path,
+    audio_ext: &str,
+    video_quality: yt_dlp::model::selector::VideoQuality,
+    video_codec: yt_dlp::model::selector::VideoCodecPreference,
+    audio_quality: yt_dlp::model::selector::AudioQuality,
+    audio_codec: yt_dlp::model::selector::AudioCodecPreference,
+    output: &mut cosmic::iced::futures::channel::mpsc::Sender<cosmic::Action<Message>>,
+    mut notify: notify_rust::Notification,
+) {
+    use cosmic::iced::futures::SinkExt;
+    use yt_dlp::events::DownloadEvent;
+
+    let mut event_rx = downloader.subscribe_events();
+
+    let video = match downloader.generic_extractor().fetch_video(url).await {
+        Ok(v) => v,
+        Err(_) => {
+            let _ = notify
+                .summary(fl_str!("metadata-failed"))
+                .show_async()
+                .await;
+            let _ = output
+                .send(cosmic::Action::App(Message::Finished(download_id)))
+                .await;
+            return;
+        }
+    };
+
+    let title = video.title.clone();
+
+    let output_filename = if video_selected {
+        unique_path(output_dir_ref, &format!("{title}.mp4")).await
+    } else {
+        unique_path(output_dir_ref, &format!("{title}.{audio_ext}")).await
+    };
+    let output_filename_str = output_filename
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&title)
+        .to_string();
+
+    let has_format = if video_selected {
+        video.select_video_format(video_quality, video_codec.clone()).is_some()
+    } else {
+        video.select_audio_format(audio_quality, audio_codec.clone()).is_some()
+    };
+
+    if !has_format {
+        let _ = notify
+            .summary(fl_str!("missing-format"))
+            .show_async()
+            .await;
+        let _ = output
+            .send(cosmic::Action::App(Message::Finished(download_id)))
+            .await;
+        return;
+    }
+
+    // Forward progress events
+    let mut progress_output = output.clone();
+    tokio::spawn(async move {
+        use std::collections::HashMap;
+        use cosmic::iced::futures::SinkExt as _;
+        let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
+        while let Ok(event) = event_rx.recv().await {
+            match &*event {
+                DownloadEvent::DownloadProgress {
+                    download_id: sid, downloaded_bytes, total_bytes,
+                    speed_bytes_per_sec, eta_seconds,
+                } => {
+                    streams.insert(*sid, (*downloaded_bytes, *total_bytes));
+                    let sum_dl: u64 = streams.values().map(|(d, _)| d).sum();
+                    let sum_tot: u64 = streams.values().map(|(_, t)| t).sum();
+                    let percent = if sum_tot > 0 { (sum_dl as f32 / sum_tot as f32) * 100.0 } else { 0.0 };
+                    let speed_mbps = speed_bytes_per_sec / 1_000_000.0;
+                    let eta = eta_seconds.filter(|&e| e > 0).or_else(|| {
+                        if *speed_bytes_per_sec > 10.0 && sum_tot > sum_dl {
+                            Some(((sum_tot - sum_dl) as f64 / speed_bytes_per_sec) as u64)
+                        } else { None }
+                    });
+                    let _ = progress_output.send(cosmic::Action::App(
+                        Message::DownloadProgress {
+                            id: download_id, percent, speed_mbps, eta_secs: eta,
+                            downloaded_bytes: sum_dl, total_bytes: sum_tot,
+                            is_post_processing: false,
+                        },
+                    )).await;
+                }
+                DownloadEvent::PostProcessStarted { .. } => {
+                    let sum_tot: u64 = streams.values().map(|(_, t)| t).sum();
+                    let _ = progress_output.send(cosmic::Action::App(
+                        Message::DownloadProgress {
+                            id: download_id, percent: 100.0, speed_mbps: 0.0,
+                            eta_secs: None, downloaded_bytes: sum_tot, total_bytes: sum_tot,
+                            is_post_processing: true,
+                        },
+                    )).await;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result: Result<String, ()> = if video_selected {
+        match downloader
+            .download(&video, output_filename_str.clone())
+            .video_quality(video_quality)
+            .video_codec(video_codec)
+            .audio_quality(audio_quality)
+            .audio_codec(audio_codec)
+            .execute()
+            .await
+        {
+            Ok(_) => Ok(output_filename_str.clone()),
+            Err(_) => Err(()),
+        }
+    } else {
+        let audio_format = match video.select_audio_format(audio_quality, audio_codec) {
+            Some(f) => f,
+            None => {
+                let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
+                return;
+            }
+        };
+        let Some(audio_url) = audio_format.download_info.url.as_deref() else {
+            let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
+            return;
+        };
+        let headers = audio_format.download_info.http_headers.clone();
+        let dl_id = downloader
+            .download_manager()
+            .enqueue_with_headers(audio_url, output_filename, None, Some(headers))
+            .await;
+        match downloader.download_manager().wait_for_completion(dl_id).await {
+            Some(yt_dlp::DownloadStatus::Completed) => Ok(output_filename_str.clone()),
+            _ => Err(()),
+        }
+    };
+
+    cleanup_temp_files(&downloader.output_dir()).await;
+
+    if result.is_err() {
+        tokio::spawn(async move {
+            let _ = notify.summary(fl_str!("download-failed", title = title)).show_async().await;
+        });
+    } else {
+        tokio::spawn(async move {
+            let _ = notify.summary(fl_str!("finished-download", title = title)).show_async().await;
+        });
+    }
+    let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
+}
+
+
 // ---------------------------------------------------------------------------
 // Static dropdown option lists
 // ---------------------------------------------------------------------------
@@ -130,6 +291,10 @@ pub struct ActiveDownload {
     pub total_bytes: u64,
     pub is_post_processing: bool,
     pub is_audio: bool,
+    // Playlist tracking (None for single-video downloads)
+    pub playlist_current: Option<u32>,
+    pub playlist_total: Option<u32>,
+    pub playlist_title: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +322,7 @@ pub struct Ytdlp {
 
     active_downloads: Vec<ActiveDownload>,
     next_download_id: u32,
+    show_platforms: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -181,7 +347,15 @@ pub enum Message {
         total_bytes: u64,
         is_post_processing: bool,
     },
+    /// Update playlist per-item progress counter
+    PlaylistProgress {
+        id: u32,
+        current: u32,
+        total: u32,
+        video_title: String,
+    },
     Finished(u32),
+    TogglePlatforms,
     /// Surface action forwarded from popup_dropdown
     SurfaceAction(cosmic::surface::Action),
 }
@@ -253,10 +427,24 @@ impl Application for Ytdlp {
         } = cosmic::theme::active().cosmic().spacing;
 
         let mut content = column![
-            text_input(fl!("url"), &self.url)
-                .on_input(Message::EnterURL)
-                .apply(padded_control)
-                .width(Length::Fill),
+            // URL input row + platforms toggle button
+            row![
+                text_input(fl!("url"), &self.url)
+                    .on_input(Message::EnterURL)
+                    .width(Length::Fill),
+                cosmic::widget::tooltip(
+                    cosmic::widget::button::icon(
+                        cosmic::widget::icon::from_name("help-about-symbolic")
+                    )
+                    .on_press(Message::TogglePlatforms),
+                    cosmic::widget::text::body(fl!("platforms-tooltip")),
+                    cosmic::widget::tooltip::Position::Bottom,
+                )
+            ]
+            .align_y(Alignment::Center)
+            .spacing(space_xxs)
+            .apply(padded_control)
+            .width(Length::Fill),
             segmented_control::horizontal(&self.download_type)
                 .on_activate(Message::ChangeType)
                 .apply(padded_control)
@@ -301,6 +489,11 @@ impl Application for Ytdlp {
             },
         ]
         .padding([pad.0, pad.1]);
+
+        // Show platforms panel if toggled
+        if self.show_platforms {
+            content = content.push(self.view_platforms());
+        }
 
         // Append a progress row for each active download
         for dl in &self.active_downloads {
@@ -380,7 +573,7 @@ impl Application for Ytdlp {
                         .ok()?;
                     let folder = request.response().ok()?;
                     let uri = folder.uris().first()?;
-                    Some(uri.path().to_string())
+                    uri.to_file_path().ok().map(|p| p.to_string_lossy().into_owned())
                 };
                 return Task::perform(future, |folder| {
                     if let Some(folder) = folder {
@@ -413,6 +606,9 @@ impl Application for Ytdlp {
                     total_bytes: 0,
                     is_post_processing: false,
                     is_audio: !video_selected,
+                    playlist_current: None,
+                    playlist_total: None,
+                    playlist_title: None,
                 });
 
                 let url = self.url.clone();
@@ -434,8 +630,13 @@ impl Application for Ytdlp {
                 let audio_codec: yt_dlp::model::selector::AudioCodecPreference =
                     self.audio_codec.into();
 
+                /// Detects if a URL looks like a playlist (YouTube list= param, etc.)
+                fn is_playlist_url(url: &str) -> bool {
+                    url.contains("list=") || url.contains("/playlist")
+                }
+
                 return Task::stream(cosmic::iced::stream::channel(
-                    32,
+                    64,
                     move |mut output: cosmic::iced::futures::channel::mpsc::Sender<Action<Message>>| async move {
                         use cosmic::iced::futures::SinkExt;
 
@@ -447,209 +648,167 @@ impl Application for Ytdlp {
                         let downloader =
                             fetcher::with_output_dir(&lib_dir, output_dir).await;
 
-                        // Subscribe before starting download so we catch all events
-                        let mut event_rx = downloader.subscribe_events();
-
-                        let video =
-                            match downloader.generic_extractor().fetch_video(&url).await {
-                                Ok(v) => v,
-                                Err(_) => {
-                                    let _ = notify
-                                        .summary(fl_str!("metadata-failed"))
-                                        .show_async()
-                                        .await;
-                                    let _ = output
-                                        .send(Action::App(Message::Finished(download_id)))
-                                        .await;
+                        // ── Playlist branch ──────────────────────────────────────────
+                        if is_playlist_url(&url) {
+                            let playlist = match downloader.fetch_playlist_infos(&url).await {
+                                Ok(p) if !p.entries.is_empty() => p,
+                                _ => {
+                                    // Not a real playlist or fetch failed — fall through to single-video below
+                                    // We drop into the single-video flow by recursing into the same logic.
+                                    // Instead, we handle it inline.
+                                    run_single_download(
+                                        download_id, video_selected, &url,
+                                        &downloader, &output_dir_ref, &audio_ext,
+                                        video_quality, video_codec, audio_quality, audio_codec,
+                                        &mut output, notify,
+                                    ).await;
                                     return;
                                 }
                             };
 
-                        let title = video.title.clone();
+                            let total = playlist.entries.len() as u32;
+                            let playlist_title = playlist.title.clone();
 
-                        // Resolve the output filename (deduplicate if it already exists)
-                        let output_filename = if video_selected {
-                            unique_path(&output_dir_ref, &format!("{title}.mp4")).await
-                        } else {
-                            unique_path(&output_dir_ref, &format!("{title}.{audio_ext}")).await
-                        };
-                        let output_filename_str = output_filename
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(&title)
-                            .to_string();
-
-                        let has_format = if video_selected {
-                            video
-                                .select_video_format(video_quality, video_codec.clone())
-                                .is_some()
-                        } else {
-                            video
-                                .select_audio_format(audio_quality, audio_codec.clone())
-                                .is_some()
-                        };
-
-                        if !has_format {
+                            // Notify: fetching playlist
                             let _ = notify
-                                .summary(fl_str!("missing-format"))
+                                .summary(&fl_str!("playlist-fetching", title = playlist_title.clone()))
                                 .show_async()
                                 .await;
-                            let _ = output
-                                .send(Action::App(Message::Finished(download_id)))
-                                .await;
+
+                            let mut downloaded_ok: u32 = 0;
+
+                            for (idx, entry) in playlist.entries.iter().enumerate() {
+                                let current = idx as u32 + 1;
+                                let entry_url = entry.url.clone();
+                                let entry_title = entry.title.clone();
+
+                                // Report playlist progress to UI
+                                let _ = output.send(Action::App(Message::PlaylistProgress {
+                                    id: download_id,
+                                    current,
+                                    total,
+                                    video_title: entry_title.clone(),
+                                })).await;
+
+                                // Re-subscribe to events for this entry
+                                let mut event_rx = downloader.subscribe_events();
+
+                                // Fetch full metadata for this entry
+                                let video = match downloader.fetch_video_infos(&entry_url).await {
+                                    Ok(v) => v,
+                                    Err(_) => continue, // skip unavailable entries
+                                };
+
+                                let ext = if video_selected { "mp4" } else { &audio_ext };
+                                let output_filename = unique_path(&output_dir_ref, &format!("{entry_title}.{ext}")).await;
+                                let output_filename_str = output_filename
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or(&entry_title)
+                                    .to_string();
+
+                                // Forward per-entry progress events
+                                let mut progress_out = output.clone();
+                                let progress_handle = tokio::spawn(async move {
+                                    use std::collections::HashMap;
+                                    use cosmic::iced::futures::SinkExt as _;
+                                    use yt_dlp::events::DownloadEvent;
+                                    let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
+                                    while let Ok(event) = event_rx.recv().await {
+                                        match &*event {
+                                            DownloadEvent::DownloadProgress {
+                                                download_id: sid, downloaded_bytes, total_bytes,
+                                                speed_bytes_per_sec, eta_seconds,
+                                            } => {
+                                                streams.insert(*sid, (*downloaded_bytes, *total_bytes));
+                                                let sum_dl: u64 = streams.values().map(|(d, _)| d).sum();
+                                                let sum_total: u64 = streams.values().map(|(_, t)| t).sum();
+                                                let percent = if sum_total > 0 {
+                                                    (sum_dl as f32 / sum_total as f32) * 100.0
+                                                } else { 0.0 };
+                                                let speed_mbps = speed_bytes_per_sec / 1_000_000.0;
+                                                let eta = eta_seconds
+                                                    .filter(|&e| e > 0)
+                                                    .or_else(|| {
+                                                        if *speed_bytes_per_sec > 10.0 && sum_total > sum_dl {
+                                                            Some(((sum_total - sum_dl) as f64 / speed_bytes_per_sec) as u64)
+                                                        } else { None }
+                                                    });
+                                                let _ = progress_out.send(Action::App(
+                                                    Message::DownloadProgress {
+                                                        id: download_id,
+                                                        percent, speed_mbps, eta_secs: eta,
+                                                        downloaded_bytes: sum_dl,
+                                                        total_bytes: sum_total,
+                                                        is_post_processing: false,
+                                                    },
+                                                )).await;
+                                            }
+                                            DownloadEvent::PostProcessStarted { .. } => {
+                                                let sum_total: u64 = streams.values().map(|(_, t)| t).sum();
+                                                let _ = progress_out.send(Action::App(
+                                                    Message::DownloadProgress {
+                                                        id: download_id,
+                                                        percent: 100.0, speed_mbps: 0.0,
+                                                        eta_secs: None,
+                                                        downloaded_bytes: sum_total,
+                                                        total_bytes: sum_total,
+                                                        is_post_processing: true,
+                                                    },
+                                                )).await;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                });
+
+                                if video_selected {
+                                    let _ = downloader
+                                        .download(&video, output_filename_str)
+                                        .video_quality(video_quality)
+                                        .video_codec(video_codec.clone())
+                                        .audio_quality(audio_quality)
+                                        .audio_codec(audio_codec.clone())
+                                        .execute()
+                                        .await;
+                                } else {
+                                    if let Some(audio_format) = video.select_audio_format(audio_quality, audio_codec.clone()) {
+                                        if let Some(audio_url) = audio_format.download_info.url.as_deref() {
+                                            let headers = audio_format.download_info.http_headers.clone();
+                                            let dl_id = downloader
+                                                .download_manager()
+                                                .enqueue_with_headers(audio_url, output_filename, None, Some(headers))
+                                                .await;
+                                            let _ = downloader.download_manager().wait_for_completion(dl_id).await;
+                                        }
+                                    }
+                                }
+
+                                progress_handle.abort();
+                                downloaded_ok += 1;
+                                cleanup_temp_files(&downloader.output_dir()).await;
+                            }
+
+                            // Final notification
+                            let pt = playlist_title.clone();
+                            let count = downloaded_ok;
+                            tokio::spawn(async move {
+                                let _ = notify
+                                    .summary(&fl_str!("playlist-finished", title = pt, count = count))
+                                    .show_async()
+                                    .await;
+                            });
+                            let _ = output.send(Action::App(Message::Finished(download_id))).await;
                             return;
                         }
 
-                        // Spawn a task to forward progress events to the UI
-                        let mut progress_output = output.clone();
-                        tokio::spawn(async move {
-                            use std::collections::HashMap;
-                            use cosmic::iced::futures::SinkExt as _;
-                            use yt_dlp::events::DownloadEvent;
-
-                            let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
-
-                            while let Ok(event) = event_rx.recv().await {
-                                match &*event {
-                                    DownloadEvent::DownloadProgress {
-                                        download_id: stream_id,
-                                        downloaded_bytes,
-                                        total_bytes,
-                                        speed_bytes_per_sec,
-                                        eta_seconds,
-                                    } => {
-                                        streams.insert(*stream_id, (*downloaded_bytes, *total_bytes));
-
-                                        let sum_downloaded: u64 = streams.values().map(|(d, _)| d).sum();
-                                        let sum_total: u64 = streams.values().map(|(_, t)| t).sum();
-
-                                        let percent = if sum_total > 0 {
-                                            (sum_downloaded as f32 / sum_total as f32) * 100.0
-                                        } else {
-                                            0.0
-                                        };
-
-                                        let speed_mbps = speed_bytes_per_sec / 1_000_000.0;
-
-                                        let eta_secs = if let Some(eta) = eta_seconds {
-                                            if *eta > 0 { Some(*eta) } else { None }
-                                        } else { None };
-
-                                        let final_eta = eta_secs.or_else(|| {
-                                            if *speed_bytes_per_sec > 10.0 && sum_total > sum_downloaded {
-                                                let rem_bytes = sum_total - sum_downloaded;
-                                                Some((rem_bytes as f64 / speed_bytes_per_sec) as u64)
-                                            } else {
-                                                None
-                                            }
-                                        });
-
-                                        let _ = progress_output.send(Action::App(
-                                            Message::DownloadProgress {
-                                                id: download_id,
-                                                percent,
-                                                speed_mbps,
-                                                eta_secs: final_eta,
-                                                downloaded_bytes: sum_downloaded,
-                                                total_bytes: sum_total,
-                                                is_post_processing: false,
-                                            },
-                                        )).await;
-                                    }
-                                    DownloadEvent::PostProcessStarted { .. } => {
-                                        let sum_total: u64 = streams.values().map(|(_, t)| t).sum();
-                                        let _ = progress_output.send(Action::App(
-                                            Message::DownloadProgress {
-                                                id: download_id,
-                                                percent: 100.0,
-                                                speed_mbps: 0.0,
-                                                eta_secs: None,
-                                                downloaded_bytes: sum_total,
-                                                total_bytes: sum_total,
-                                                is_post_processing: true,
-                                            },
-                                        )).await;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        });
-
-                        // Run the actual download
-                        let result: Result<String, ()> = if video_selected {
-                            match downloader
-                                .download(&video, output_filename_str.clone())
-                                .video_quality(video_quality)
-                                .video_codec(video_codec)
-                                .audio_quality(audio_quality)
-                                .audio_codec(audio_codec)
-                                .execute()
-                                .await
-                            {
-                                Ok(_) => Ok(output_filename_str.clone()),
-                                Err(_) => Err(()),
-                            }
-                        } else {
-                            // Enqueue the audio stream through the download manager so that
-                            // progress events are emitted on the event bus. The standalone
-                            // `download_audio_stream_with_quality` path bypasses the manager
-                            // entirely and therefore never reports progress (stuck at 0%).
-                            let audio_format = match video.select_audio_format(audio_quality, audio_codec) {
-                                Some(f) => f,
-                                None => {
-                                    let _ = output
-                                        .send(Action::App(Message::Finished(download_id)))
-                                        .await;
-                                    return;
-                                }
-                            };
-                            let Some(audio_url) = audio_format.download_info.url.as_deref() else {
-                                let _ = output
-                                    .send(Action::App(Message::Finished(download_id)))
-                                    .await;
-                                return;
-                            };
-                            let headers = audio_format.download_info.http_headers.clone();
-                            let dl_id = downloader
-                                .download_manager()
-                                .enqueue_with_headers(
-                                    audio_url,
-                                    output_filename,
-                                    None,
-                                    Some(headers),
-                                )
-                                .await;
-                            match downloader
-                                .download_manager()
-                                .wait_for_completion(dl_id)
-                                .await
-                            {
-                                Some(yt_dlp::DownloadStatus::Completed) => Ok(output_filename_str.clone()),
-                                _ => Err(()),
-                            }
-                        };
-
-                        // Clean up leftover temp files from the yt-dlp crate
-                        cleanup_temp_files(&downloader.output_dir()).await;
-
-                        if result.is_err() {
-                            tokio::spawn(async move {
-                                let _ = notify
-                                    .summary(fl_str!("download-failed", title = title))
-                                    .show_async()
-                                    .await;
-                            });
-                        } else {
-                            tokio::spawn(async move {
-                                let _ = notify
-                                    .summary(fl_str!("finished-download", title = title))
-                                    .show_async()
-                                    .await;
-                            });
-                        }
-                        let _ = output
-                            .send(Action::App(Message::Finished(download_id)))
-                            .await;
+                        // ── Single video branch ──────────────────────────────────────
+                        run_single_download(
+                            download_id, video_selected, &url,
+                            &downloader, &output_dir_ref, &audio_ext,
+                            video_quality, video_codec, audio_quality, audio_codec,
+                            &mut output, notify,
+                        ).await;
                     },
                 ));
             }
@@ -671,11 +830,27 @@ impl Application for Ytdlp {
                     dl.is_post_processing = is_post_processing;
                 }
             }
+            Message::PlaylistProgress { id, current, total, video_title } => {
+                if let Some(dl) = self.active_downloads.iter_mut().find(|d| d.id == id) {
+                    dl.playlist_current = Some(current);
+                    dl.playlist_total = Some(total);
+                    dl.playlist_title = Some(video_title);
+                    // Reset per-entry progress bar
+                    dl.percent = 0.0;
+                    dl.downloaded_bytes = 0;
+                    dl.total_bytes = 0;
+                    dl.eta_secs = None;
+                    dl.is_post_processing = false;
+                }
+            }
             Message::Finished(id) => {
                 self.active_downloads.retain(|d| d.id != id);
             }
             Message::SurfaceAction(action) => {
                 return cosmic::surface::surface_task(action);
+            }
+            Message::TogglePlatforms => {
+                self.show_platforms = !self.show_platforms;
             }
         }
         Task::none()
@@ -687,6 +862,53 @@ impl Application for Ytdlp {
 }
 
 impl Ytdlp {
+    fn view_platforms(&self) -> Element<'_, Message> {
+        let Spacing { space_xxs, space_s, space_xs, .. } = cosmic::theme::active().cosmic().spacing;
+
+        // Two-column grid of popular platforms
+        const PLATFORMS: &[(&str, &str)] = &[
+            ("▶", "YouTube"),
+            ("🎵", "YouTube Music"),
+            ("📱", "TikTok"),
+            ("📸", "Instagram"),
+            ("🐦", "Twitter / X"),
+            ("📘", "Facebook"),
+            ("🎮", "Twitch"),
+            ("🎵", "SoundCloud"),
+            ("🎥", "Vimeo"),
+            ("🤖", "Reddit"),
+            ("📺", "Dailymotion"),
+            ("🎬", "Bilibili"),
+        ];
+
+        let mut left_col = column![].spacing(space_xxs);
+        let mut right_col = column![].spacing(space_xxs);
+
+        for (i, (icon, name)) in PLATFORMS.iter().enumerate() {
+            let label = cosmic::widget::text::caption(format!("{icon}  {name}"));
+            if i % 2 == 0 {
+                left_col = left_col.push(label);
+            } else {
+                right_col = right_col.push(label);
+            }
+        }
+
+        column![
+            padded_control(divider::horizontal::default()).padding([space_xxs, space_s]),
+            row![
+                left_col.width(Length::FillPortion(1)),
+                right_col.width(Length::FillPortion(1)),
+            ]
+            .spacing(space_s)
+            .apply(padded_control),
+            cosmic::widget::text::caption(fl!("platforms-footer"))
+                .apply(padded_control),
+            padded_control(divider::horizontal::default()).padding([space_xxs, space_s]),
+        ]
+        .spacing(space_xs)
+        .into()
+    }
+
     fn view_video(&self, popup_id: Option<window::Id>) -> Element<'_, Message> {
         let video_quality_idx = VIDEO_QUALITIES
             .iter()
@@ -838,6 +1060,19 @@ impl Ytdlp {
             space_xxs, space_s, ..
         } = cosmic::theme::active().cosmic().spacing;
 
+        // Playlist header line: "Playlist 3/15 – Some Video Title"
+        let playlist_line = if let (Some(cur), Some(tot), Some(vtitle)) =
+            (dl.playlist_current, dl.playlist_total, &dl.playlist_title)
+        {
+            Some(fl!("playlist-downloading",
+                current = cur,
+                total = tot,
+                title = vtitle.clone()
+            ))
+        } else {
+            None
+        };
+
         let status_line = if dl.is_post_processing {
             if dl.is_audio {
                 fl!("post-processing-audio")
@@ -872,14 +1107,22 @@ impl Ytdlp {
             String::new()
         };
 
-        let mut col = column![
-            cosmic::widget::text::caption(status_line),
-            cosmic::widget::determinate_linear(dl.percent / 100.0)
-                .width(Length::Fill)
-                .girth(6),
-        ]
-        .spacing(space_xxs)
-        .padding([0, space_s]);
+        let mut col = column![]
+            .spacing(space_xxs)
+            .padding([0, space_s]);
+
+        // Show playlist position header if applicable
+        if let Some(pl_line) = playlist_line {
+            col = col.push(cosmic::widget::text::caption(pl_line));
+        }
+
+        col = col
+            .push(cosmic::widget::text::caption(status_line))
+            .push(
+                cosmic::widget::determinate_linear(dl.percent / 100.0)
+                    .width(Length::Fill)
+                    .girth(6),
+            );
 
         if !size_text.is_empty() {
             col = col.push(cosmic::widget::text::caption(size_text));
