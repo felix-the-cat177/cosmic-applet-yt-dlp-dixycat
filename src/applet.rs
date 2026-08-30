@@ -16,7 +16,6 @@ use cosmic::{Action, Application, Apply, Element};
 use ashpd::desktop::file_chooser::SelectedFiles;
 use notify_rust::Notification;
 
-use yt_dlp::extractor::VideoExtractor;
 use yt_dlp::VideoSelection;
 
 use crate::formats::{AudioCodec, AudioQuality, VideoCodec, VideoQuality};
@@ -99,7 +98,7 @@ async fn run_single_download(
 
     let mut event_rx = downloader.subscribe_events();
 
-    let video = match downloader.generic_extractor().fetch_video(url).await {
+    let video = match downloader.fetch_video_infos(url).await {
         Ok(v) => v,
         Err(_) => {
             let _ = notify

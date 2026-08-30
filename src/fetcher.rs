@@ -28,6 +28,17 @@ pub async fn binaries() -> PathBuf {
             .install_youtube(None)
             .await
             .expect("Failed to download yt-dlp");
+    } else {
+        // Keep yt-dlp up-to-date in the background so it stays compatible
+        // with the latest YouTube changes. Runs asynchronously so startup
+        // is not delayed.
+        let ytdlp_bin = youtube_path.clone();
+        tokio::spawn(async move {
+            let _ = tokio::process::Command::new(&ytdlp_bin)
+                .args(["--update-to", "stable"])
+                .output()
+                .await;
+        });
     }
 
     if !ffmpeg_path.exists() {
