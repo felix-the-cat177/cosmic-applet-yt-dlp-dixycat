@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.felix_the_cat177.CosmicAppletYtDlp</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <project_group>COSMIC</project_group>
+  <developer_name>Dixycat</developer_name>
+  <url type="homepage">https://github.com/felix-the-cat177/cosmic-applet-yt-dlp-dixycat</url>
+  <url type="bugtracker">https://github.com/felix-the-cat177/cosmic-applet-yt-dlp-dixycat/issues</url>
+  <name>COSMIC yt-dlp Applet</name>
+  <name xml:lang="pt_BR">Miniaplicativo yt-dlp COSMIC</name>
+  <name xml:lang="es">Applet yt-dlp COSMIC</name>
+  <summary>A modern yt-dlp GUI applet for the COSMIC desktop panel</summary>
+  <summary xml:lang="pt_BR">Miniaplicativo de download rápido para o painel COSMIC</summary>
+  <summary xml:lang="es">Miniaplicación de descarga rápida para el panel COSMIC</summary>
+  <description>
+    <p>
+      A native applet for the COSMIC Desktop Environment that allows you to easily
+      download videos and extract audio streams using yt-dlp with real-time progress,
+      quality and codec selection, and full playlist support.
+    </p>
+    <p xml:lang="pt_BR">
+      Um miniaplicativo nativo para o COSMIC Desktop que permite baixar vídeos e extrair
+      áudios com praticidade usando yt-dlp, com progresso em tempo real, seleção de
+      qualidade e codec e suporte completo a playlists.
+    </p>
+    <p xml:lang="es">
+      Una miniaplicación nativa para COSMIC Desktop que permite descargar videos y extraer
+      audios fácilmente usando yt-dlp, con progreso en tiempo real, selección de calidad y
+      códec, y soporte completo para listas de reproducción.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.felix_the_cat177.CosmicAppletYtDlp.desktop</launchable>
+  <icon type="stock">io.github.felix_the_cat177.CosmicAppletYtDlp</icon>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/felix-the-cat177/cosmic-applet-yt-dlp-dixycat/master/res/screenshot.png</image>
+      <caption>COSMIC yt-dlp applet with frosted glass blur and playlist progress</caption>
+      <caption xml:lang="pt_BR">Miniaplicativo COSMIC yt-dlp com vidro fosco e download de playlist</caption>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Utility</category>
+    <category>AudioVideo</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.2.1" date="2026-08-30">
+      <description>
+        <p>Support for playlists, platform speed optimizations, real-time speed &amp; ETA, and frosted glass blur.</p>
+      </description>
+    </release>
+  </releases>
+  <provides>
+    <id>io.github.felix_the_cat177.CosmicAppletYtDlp</id>
+    <binaries>
+      <binary>cosmic-applet-yt-dlp-dixycat</binary>
+    </binaries>
+  </provides>
+</component>

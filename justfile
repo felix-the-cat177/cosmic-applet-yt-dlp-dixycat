@@ -1,5 +1,5 @@
 name := 'cosmic-applet-yt-dlp-dixycat'
-export APPID := 'dev.DBrox.CosmicYtdlp'
+export APPID := 'io.github.felix_the_cat177.CosmicAppletYtDlp'
 import "res/packaging.just"
 
 # Default recipe which runs `just build-release`

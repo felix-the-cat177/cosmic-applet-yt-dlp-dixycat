@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="28" fill="#18181B"/>
+  <rect x="2" y="2" width="124" height="124" rx="26" stroke="#27272A" stroke-width="4"/>
+  
+  <!-- Film / Media Header Accent -->
+  <rect x="24" y="26" width="80" height="48" rx="10" fill="#27272A"/>
+  <rect x="28" y="30" width="72" height="40" rx="8" fill="#F59E0B" fill-opacity="0.15"/>
+  
+  <!-- Play Icon in screen -->
+  <polygon points="56,38 78,50 56,62" fill="#F59E0B"/>
+  
+  <!-- Download Arrow Accent -->
+  <g transform="translate(64, 88)">
+    <circle r="22" fill="#F59E0B"/>
+    <!-- Arrow Down -->
+    <path d="M-6 -6 L0 2 L6 -6" stroke="#18181B" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="0" y1="-12" x2="0" y2="1" stroke="#18181B" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M-8 8 L8 8" stroke="#18181B" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -2,7 +2,7 @@
 name = "cosmic-applet-yt-dlp-dixycat"
 version = "0.2.1"
 edition = "2024"
-authors = ["D-Brox <davidfbg00@gmail.com>"]
+authors = ["Dixycat <felix-the-cat177>"]
 license = "GPL-3.0-only"
 description = "A simple yt-dlp GUI for the COSMIC DE"
 
@@ -34,8 +34,8 @@ features = ["applet", "tokio", "wayland"]
 license-file = "LICENSE"
 assets = [
     ["target/release/cosmic-applet-yt-dlp-dixycat", "usr/bin/", "755"],
-    ["res/dev.DBrox.CosmicYtdlp.desktop", "usr/share/applications/", "644"],
-    ["res/dev.DBrox.CosmicYtdlp.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["res/io.github.felix_the_cat177.CosmicAppletYtDlp.desktop", "usr/share/applications/", "644"],
+    ["res/io.github.felix_the_cat177.CosmicAppletYtDlp.metainfo.xml", "usr/share/metainfo/", "644"],
 ]
 depends = ["libc6", "liblzma5", "libssl3", "libxkbcommon0", "nscd"]
 

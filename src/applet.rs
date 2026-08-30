@@ -364,7 +364,7 @@ impl Application for Ytdlp {
     type Flags = PathBuf;
     type Message = Message;
 
-    const APP_ID: &'static str = "dev.DBrox.CosmicYtdlp";
+    const APP_ID: &'static str = "io.github.felix_the_cat177.CosmicAppletYtDlp";
 
     fn core(&self) -> &Core {
         &self.core

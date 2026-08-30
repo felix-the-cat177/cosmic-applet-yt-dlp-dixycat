@@ -1,0 +1,17 @@
+[Desktop Entry]
+Name=COSMIC yt-dlp Applet
+Name[pt_BR]=Miniaplicativo yt-dlp COSMIC
+Name[es]=Applet yt-dlp COSMIC
+Comment=Download videos and audio directly from the COSMIC panel
+Comment[pt_BR]=Baixe vídeos e áudios diretamente do painel COSMIC
+Comment[es]=Descarga videos y audio directamente desde el panel COSMIC
+Exec=cosmic-applet-yt-dlp-dixycat %F
+Terminal=false
+Type=Application
+StartupNotify=true
+Icon=io.github.felix_the_cat177.CosmicAppletYtDlp
+Categories=COSMIC;Utility;AudioVideo;
+Keywords=COSMIC;Applet;YouTube;Download;yt-dlp;Video;Audio;
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto

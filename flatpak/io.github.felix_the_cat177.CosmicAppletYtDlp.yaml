@@ -1,0 +1,47 @@
+app-id: io.github.felix_the_cat177.CosmicAppletYtDlp
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: cosmic-applet-yt-dlp-dixycat
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=network
+  - --filesystem=xdg-download
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-music
+  - --talk-name=org.freedesktop.Notifications
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/cosmic-applet-yt-dlp-dixycat/cargo
+
+modules:
+  - name: just
+    buildsystem: simple
+    build-commands:
+      - cargo --offline install --path . --root /app
+    sources:
+      - type: archive
+        url: https://static.crates.io/crates/just/just-1.39.0.crate
+        sha256: 4ecdb1ba5cf79854746ef743fef89eebbf0f6ff6715f5c15ff802f04e0e561fc
+      - type: patch
+        paths: []
+    build-options:
+      env:
+        CARGO_HOME: /run/build/just/cargo
+
+  - name: cosmic-applet-yt-dlp-dixycat
+    buildsystem: simple
+    build-commands:
+      - just rootdir=/app install
+    sources:
+      - type: git
+        url: https://github.com/felix-the-cat177/cosmic-applet-yt-dlp-dixycat.git
+        tag: v0.2.1
+        commit: 64aa2f3cfd6199dbb646c0a0c4f8ea028303f8f1
