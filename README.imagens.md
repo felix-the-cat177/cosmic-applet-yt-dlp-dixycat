@@ -4,6 +4,7 @@
 
 <p align="center">
   <img src="./Image1.png" alt="COSMIC Applet yt-dlp screenshot" width="700" />
+</p>
  ## 🎬 Demonstração em Vídeo
 
 <div align="center">
@@ -11,4 +12,3 @@
     Seu navegador não suporta a exibição de vídeos.
   </video>
 </div>
-</p>
