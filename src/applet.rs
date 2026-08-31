@@ -112,8 +112,8 @@ async fn run_single_download(
                 format!("{}/%(title)s.%(ext)s", output_dir_ref.display())
             };
 
-            let mut cmd = tokio::process::Command::new(downloader.libraries().youtube());
-            cmd.arg("--ffmpeg-location").arg(downloader.libraries().ffmpeg());
+            let mut cmd = tokio::process::Command::new(&downloader.libraries().youtube);
+            cmd.arg("--ffmpeg-location").arg(&downloader.libraries().ffmpeg);
             cmd.arg("-o").arg(&out_template);
             if !video_selected {
                 cmd.arg("-x").arg("--audio-format").arg(audio_ext);
