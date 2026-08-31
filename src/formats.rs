@@ -10,6 +10,38 @@ use yt_dlp::model::selector::{
 };
 
 // ---------------------------------------------------------------------------
+// Video container format (MP4, MKV, WebM)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
+pub enum VideoContainer {
+    #[default]
+    MP4,
+    MKV,
+    WebM,
+}
+
+impl VideoContainer {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            VideoContainer::MP4 => "mp4",
+            VideoContainer::MKV => "mkv",
+            VideoContainer::WebM => "webm",
+        }
+    }
+}
+
+impl Display for VideoContainer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VideoContainer::MP4 => write!(f, "MP4"),
+            VideoContainer::MKV => write!(f, "MKV"),
+            VideoContainer::WebM => write!(f, "WebM"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Video quality (UI-facing labels)
 // ---------------------------------------------------------------------------
 
@@ -127,9 +159,11 @@ impl From<AudioQuality> for YtAudioQuality {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum AudioCodec {
-    Opus,
-    AAC,
     MP3,
+    AAC,
+    Opus,
+    FLAC,
+    WAV,
     #[default]
     Any,
 }
@@ -138,9 +172,11 @@ impl AudioCodec {
     /// Returns the recommended file extension for this audio codec.
     pub fn extension(&self) -> &'static str {
         match self {
-            AudioCodec::Opus => "opus",
-            AudioCodec::AAC => "m4a",
             AudioCodec::MP3 => "mp3",
+            AudioCodec::AAC => "m4a",
+            AudioCodec::Opus => "opus",
+            AudioCodec::FLAC => "flac",
+            AudioCodec::WAV => "wav",
             AudioCodec::Any => "m4a",
         }
     }
@@ -149,9 +185,11 @@ impl AudioCodec {
 impl Display for AudioCodec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AudioCodec::Opus => write!(f, "Opus"),
-            AudioCodec::AAC => write!(f, "AAC"),
             AudioCodec::MP3 => write!(f, "MP3"),
+            AudioCodec::AAC => write!(f, "AAC (M4A)"),
+            AudioCodec::Opus => write!(f, "Opus"),
+            AudioCodec::FLAC => write!(f, "FLAC"),
+            AudioCodec::WAV => write!(f, "WAV"),
             AudioCodec::Any => write!(f, "Any"),
         }
     }
@@ -160,9 +198,11 @@ impl Display for AudioCodec {
 impl From<AudioCodec> for YtAudioCodec {
     fn from(val: AudioCodec) -> Self {
         match val {
-            AudioCodec::Opus => YtAudioCodec::Opus,
-            AudioCodec::AAC => YtAudioCodec::AAC,
             AudioCodec::MP3 => YtAudioCodec::MP3,
+            AudioCodec::AAC => YtAudioCodec::AAC,
+            AudioCodec::Opus => YtAudioCodec::Opus,
+            AudioCodec::FLAC => YtAudioCodec::Any,
+            AudioCodec::WAV => YtAudioCodec::Any,
             AudioCodec::Any => YtAudioCodec::Any,
         }
     }

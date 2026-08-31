@@ -29,3 +29,5 @@ eta-secs = ETA: { $secs }s
 calculating = calculating…
 platforms-tooltip = Supported platforms
 platforms-footer = …and 1800+ sites supported by yt-dlp
+filename = File name (optional)
+video-format = Container Format

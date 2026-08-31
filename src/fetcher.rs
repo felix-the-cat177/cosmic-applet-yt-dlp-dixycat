@@ -19,9 +19,24 @@ pub async fn binaries() -> PathBuf {
         .expect("Failed to get xdg base dirs")
         .get_data_home();
 
-    let installer = LibraryInstaller::new(deps_dir.clone());
+    let legacy_dir = xdg::BaseDirectories::with_prefix("dev.DBrox.CosmicYtdlp")
+        .map(|b| b.get_data_home())
+        .unwrap_or_default();
+
     let youtube_path = deps_dir.join("yt-dlp");
     let ffmpeg_path = deps_dir.join("ffmpeg");
+
+    // Copy cached binaries from legacy directory if available to avoid re-downloading
+    if !youtube_path.exists() && legacy_dir.join("yt-dlp").exists() {
+        let _ = tokio::fs::create_dir_all(&deps_dir).await;
+        let _ = tokio::fs::copy(legacy_dir.join("yt-dlp"), &youtube_path).await;
+    }
+    if !ffmpeg_path.exists() && legacy_dir.join("ffmpeg").exists() {
+        let _ = tokio::fs::create_dir_all(&deps_dir).await;
+        let _ = tokio::fs::copy(legacy_dir.join("ffmpeg"), &ffmpeg_path).await;
+    }
+
+    let installer = LibraryInstaller::new(deps_dir.clone());
 
     if !youtube_path.exists() {
         installer
@@ -30,8 +45,7 @@ pub async fn binaries() -> PathBuf {
             .expect("Failed to download yt-dlp");
     } else {
         // Keep yt-dlp up-to-date in the background so it stays compatible
-        // with the latest YouTube changes. Runs asynchronously so startup
-        // is not delayed.
+        // with the latest changes on YouTube, TikTok, Instagram, etc.
         let ytdlp_bin = youtube_path.clone();
         tokio::spawn(async move {
             let _ = tokio::process::Command::new(&ytdlp_bin)
@@ -62,7 +76,6 @@ pub async fn with_output_dir(lib_dir: &Path, output_dir: PathBuf) -> Downloader 
         .expect("Failed to create downloader");
 
     // Download up to 4 DASH/HLS fragments in parallel — significantly faster
-    // for YouTube and other adaptive-stream platforms.
     dl.add_arg("--concurrent-fragments");
     dl.add_arg("4");
 

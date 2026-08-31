@@ -14,7 +14,7 @@ downloading = { $total ->
     *[other] {$total} downloads em progresso
 }
 start-download = Download iniciado: { $title }
-finished-download = Donwload completo: { $title }
+finished-download = Download concluído: { $title }
 playlist-fetching = Buscando playlist: { $title }
 playlist-downloading = Playlist { $current }/{ $total } – { $title }
 playlist-finished = Playlist concluída: { $title } ({ $count } vídeos)
@@ -29,3 +29,5 @@ eta-secs = estimado: { $secs }s
 calculating = calculando…
 platforms-tooltip = Plataformas suportadas
 platforms-footer = …e mais de 1800 sites suportados pelo yt-dlp
+filename = Nome do arquivo (opcional)
+video-format = Formato do Vídeo

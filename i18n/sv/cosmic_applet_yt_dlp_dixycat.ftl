@@ -29,3 +29,5 @@ eta-secs = ETA: { $secs }s
 calculating = beräknar…
 platforms-tooltip = Plattformar som stöds
 platforms-footer = …och 1800+ webbplatser via yt-dlp
+filename = Filnamn (valfritt)
+video-format = Videoformat

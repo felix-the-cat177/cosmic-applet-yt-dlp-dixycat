@@ -18,7 +18,7 @@ use notify_rust::Notification;
 
 use yt_dlp::VideoSelection;
 
-use crate::formats::{AudioCodec, AudioQuality, VideoCodec, VideoQuality};
+use crate::formats::{AudioCodec, AudioQuality, VideoCodec, VideoContainer, VideoQuality};
 use crate::{fetcher, fl, fl_str};
 
 // ---------------------------------------------------------------------------
@@ -83,6 +83,8 @@ async fn run_single_download(
     download_id: u32,
     video_selected: bool,
     url: &str,
+    custom_name: Option<String>,
+    video_container_ext: &str,
     downloader: &yt_dlp::Downloader,
     output_dir_ref: &std::path::Path,
     audio_ext: &str,
@@ -101,46 +103,62 @@ async fn run_single_download(
     let video = match downloader.fetch_video_infos(url).await {
         Ok(v) => v,
         Err(_) => {
-            let _ = notify
-                .summary(fl_str!("metadata-failed"))
-                .show_async()
-                .await;
-            let _ = output
-                .send(cosmic::Action::App(Message::Finished(download_id)))
-                .await;
+            // Direct CLI fallback if fetch_video_infos failed (handles direct media URLs, etc.)
+            let custom_stem = custom_name.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            let out_template = if let Some(name) = custom_stem {
+                let ext = if video_selected { video_container_ext } else { audio_ext };
+                format!("{}/{}.{}", output_dir_ref.display(), name, ext)
+            } else {
+                format!("{}/%(title)s.%(ext)s", output_dir_ref.display())
+            };
+
+            let mut cmd = tokio::process::Command::new(downloader.libraries().youtube());
+            cmd.arg("--ffmpeg-location").arg(downloader.libraries().ffmpeg());
+            cmd.arg("-o").arg(&out_template);
+            if !video_selected {
+                cmd.arg("-x").arg("--audio-format").arg(audio_ext);
+            } else if video_container_ext == "mkv" || video_container_ext == "webm" {
+                cmd.arg("--remux-video").arg(video_container_ext);
+            }
+            cmd.arg(url);
+
+            let res = cmd.status().await;
+            if res.map_or(false, |s| s.success()) {
+                tokio::spawn(async move {
+                    let _ = notify.summary(&fl_str!("finished-download", title = "Download")).show_async().await;
+                });
+            } else {
+                tokio::spawn(async move {
+                    let _ = notify.summary(fl_str!("metadata-failed")).show_async().await;
+                });
+            }
+            let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
             return;
         }
     };
 
-    let title = video.title.clone();
+    let base_name = if let Some(ref name) = custom_name {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            trimmed.to_string()
+        } else {
+            video.title.clone()
+        }
+    } else {
+        video.title.clone()
+    };
+    let title = base_name.clone();
 
     let output_filename = if video_selected {
-        unique_path(output_dir_ref, &format!("{title}.mp4")).await
+        unique_path(output_dir_ref, &format!("{base_name}.{video_container_ext}")).await
     } else {
-        unique_path(output_dir_ref, &format!("{title}.{audio_ext}")).await
+        unique_path(output_dir_ref, &format!("{base_name}.{audio_ext}")).await
     };
     let output_filename_str = output_filename
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&title)
         .to_string();
-
-    let has_format = if video_selected {
-        video.select_video_format(video_quality, video_codec.clone()).is_some()
-    } else {
-        video.select_audio_format(audio_quality, audio_codec.clone()).is_some()
-    };
-
-    if !has_format {
-        let _ = notify
-            .summary(fl_str!("missing-format"))
-            .show_async()
-            .await;
-        let _ = output
-            .send(cosmic::Action::App(Message::Finished(download_id)))
-            .await;
-        return;
-    }
 
     // Forward progress events
     let mut progress_output = output.clone();
@@ -188,38 +206,56 @@ async fn run_single_download(
     });
 
     let result: Result<String, ()> = if video_selected {
-        match downloader
-            .download(&video, output_filename_str.clone())
-            .video_quality(video_quality)
-            .video_codec(video_codec)
-            .audio_quality(audio_quality)
-            .audio_codec(audio_codec)
-            .execute()
-            .await
-        {
+        let has_specific_format = video.select_video_format(video_quality, video_codec.clone()).is_some();
+        let dl_res = if has_specific_format {
+            downloader
+                .download(&video, output_filename_str.clone())
+                .video_quality(video_quality)
+                .video_codec(video_codec)
+                .audio_quality(audio_quality)
+                .audio_codec(audio_codec)
+                .execute()
+                .await
+        } else {
+            // Direct / single-format / TikTok / Instagram / generic stream fallback
+            downloader
+                .download(&video, output_filename_str.clone())
+                .execute()
+                .await
+        };
+        match dl_res {
             Ok(_) => Ok(output_filename_str.clone()),
             Err(_) => Err(()),
         }
     } else {
-        let audio_format = match video.select_audio_format(audio_quality, audio_codec) {
-            Some(f) => f,
-            None => {
-                let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
-                return;
+        // Audio download
+        let audio_format = video.select_audio_format(audio_quality, audio_codec.clone())
+            .or_else(|| {
+                video.formats.iter()
+                    .find(|f| f.audio_ext.as_deref().unwrap_or("none") != "none")
+                    .or_else(|| video.formats.first())
+                    .cloned()
+            });
+
+        if let Some(format) = audio_format {
+            if let Some(audio_url) = format.download_info.url.as_deref() {
+                let headers = format.download_info.http_headers.clone();
+                let dl_id = downloader
+                    .download_manager()
+                    .enqueue_with_headers(audio_url, output_filename.clone(), None, Some(headers))
+                    .await;
+                match downloader.download_manager().wait_for_completion(dl_id).await {
+                    Some(yt_dlp::DownloadStatus::Completed) => Ok(output_filename_str.clone()),
+                    _ => Err(()),
+                }
+            } else {
+                match downloader.download(&video, output_filename_str.clone()).execute().await {
+                    Ok(_) => Ok(output_filename_str.clone()),
+                    Err(_) => Err(()),
+                }
             }
-        };
-        let Some(audio_url) = audio_format.download_info.url.as_deref() else {
-            let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
-            return;
-        };
-        let headers = audio_format.download_info.http_headers.clone();
-        let dl_id = downloader
-            .download_manager()
-            .enqueue_with_headers(audio_url, output_filename, None, Some(headers))
-            .await;
-        match downloader.download_manager().wait_for_completion(dl_id).await {
-            Some(yt_dlp::DownloadStatus::Completed) => Ok(output_filename_str.clone()),
-            _ => Err(()),
+        } else {
+            Err(())
         }
     };
 
@@ -237,10 +273,16 @@ async fn run_single_download(
     let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
 }
 
-
 // ---------------------------------------------------------------------------
 // Static dropdown option lists
 // ---------------------------------------------------------------------------
+
+const VIDEO_CONTAINERS: &[VideoContainer] = &[
+    VideoContainer::MP4,
+    VideoContainer::MKV,
+    VideoContainer::WebM,
+];
+const VIDEO_CONTAINER_LABELS: &[&str] = &["MP4", "MKV", "WebM"];
 
 const VIDEO_QUALITIES: &[VideoQuality] = &[
     VideoQuality::Highest,
@@ -269,12 +311,14 @@ const AUDIO_QUALITIES: &[AudioQuality] = &[
 const AUDIO_QUALITY_LABELS: &[&str] = &["Highest", "192kbps", "128kbps", "96kbps", "Lowest"];
 
 const AUDIO_CODECS: &[AudioCodec] = &[
-    AudioCodec::Opus,
-    AudioCodec::AAC,
     AudioCodec::MP3,
+    AudioCodec::AAC,
+    AudioCodec::Opus,
+    AudioCodec::FLAC,
+    AudioCodec::WAV,
     AudioCodec::Any,
 ];
-const AUDIO_CODEC_LABELS: &[&str] = &["Opus", "AAC", "MP3", "Any"];
+const AUDIO_CODEC_LABELS: &[&str] = &["MP3", "AAC (M4A)", "Opus", "FLAC", "WAV", "Any"];
 
 // ---------------------------------------------------------------------------
 // Per-download progress state
@@ -310,7 +354,9 @@ pub struct Ytdlp {
     video_folder: String,
     audio_folder: String,
     url: String,
+    custom_name: String,
 
+    video_container: VideoContainer,
     video_quality: VideoQuality,
     audio_quality: AudioQuality,
     video_codec: VideoCodec,
@@ -329,9 +375,11 @@ pub enum Message {
     TogglePopup,
     PopupClosed(window::Id),
     EnterURL(String),
+    EnterCustomName(String),
     SelectFolder,
     ProcessSelectFolder(String),
     ChangeType(Entity),
+    VideoContainerSelected(usize),
     VideoQualitySelected(usize),
     AudioQualitySelected(usize),
     VideoCodecSelected(usize),
@@ -444,6 +492,11 @@ impl Application for Ytdlp {
             .spacing(space_xxs)
             .apply(padded_control)
             .width(Length::Fill),
+            // Custom file name input (optional)
+            text_input(fl!("filename"), &self.custom_name)
+                .on_input(Message::EnterCustomName)
+                .apply(padded_control)
+                .width(Length::Fill),
             segmented_control::horizontal(&self.download_type)
                 .on_activate(Message::ChangeType)
                 .apply(padded_control)
@@ -538,7 +591,13 @@ impl Application for Ytdlp {
                 }
             }
             Message::EnterURL(url) => self.url = url,
+            Message::EnterCustomName(name) => self.custom_name = name,
             Message::ChangeType(id) => self.download_type.activate(id),
+            Message::VideoContainerSelected(idx) => {
+                if let Some(&c) = VIDEO_CONTAINERS.get(idx) {
+                    self.video_container = c;
+                }
+            }
             Message::VideoQualitySelected(idx) => {
                 if let Some(&q) = VIDEO_QUALITIES.get(idx) {
                     self.video_quality = q;
@@ -611,14 +670,21 @@ impl Application for Ytdlp {
                 });
 
                 let url = self.url.clone();
+                let custom_name = if self.custom_name.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.custom_name.clone())
+                };
                 let lib_dir = self.lib_dir.clone();
                 self.url.clear();
+                self.custom_name.clear();
                 let output_dir = PathBuf::from(if video_selected {
                     &self.video_folder
                 } else {
                     &self.audio_folder
                 });
                 let output_dir_ref = output_dir.clone();
+                let video_container_ext = self.video_container.extension();
                 let audio_ext = self.audio_codec.extension();
                 let video_quality: yt_dlp::model::selector::VideoQuality =
                     self.video_quality.into();
@@ -652,11 +718,9 @@ impl Application for Ytdlp {
                             let playlist = match downloader.fetch_playlist_infos(&url).await {
                                 Ok(p) if !p.entries.is_empty() => p,
                                 _ => {
-                                    // Not a real playlist or fetch failed — fall through to single-video below
-                                    // We drop into the single-video flow by recursing into the same logic.
-                                    // Instead, we handle it inline.
                                     run_single_download(
                                         download_id, video_selected, &url,
+                                        custom_name, video_container_ext,
                                         &downloader, &output_dir_ref, &audio_ext,
                                         video_quality, video_codec, audio_quality, audio_codec,
                                         &mut output, notify,
@@ -678,10 +742,14 @@ impl Application for Ytdlp {
 
                             for (idx, entry) in playlist.entries.iter().enumerate() {
                                 let current = idx as u32 + 1;
-                                let entry_url = entry.url.clone();
-                                let entry_title = entry.title.clone();
 
-                                // Report playlist progress to UI
+                                let video = match downloader.fetch_video_infos(&entry.url).await {
+                                    Ok(v) => v,
+                                    Err(_) => continue,
+                                };
+
+                                let entry_title = video.title.clone();
+
                                 let _ = output.send(Action::App(Message::PlaylistProgress {
                                     id: download_id,
                                     current,
@@ -689,29 +757,23 @@ impl Application for Ytdlp {
                                     video_title: entry_title.clone(),
                                 })).await;
 
-                                // Re-subscribe to events for this entry
-                                let mut event_rx = downloader.subscribe_events();
-
-                                // Fetch full metadata for this entry
-                                let video = match downloader.fetch_video_infos(&entry_url).await {
-                                    Ok(v) => v,
-                                    Err(_) => continue, // skip unavailable entries
+                                let output_filename = if video_selected {
+                                    unique_path(&output_dir_ref, &format!("{entry_title}.{video_container_ext}")).await
+                                } else {
+                                    unique_path(&output_dir_ref, &format!("{entry_title}.{audio_ext}")).await
                                 };
-
-                                let ext = if video_selected { "mp4" } else { &audio_ext };
-                                let output_filename = unique_path(&output_dir_ref, &format!("{entry_title}.{ext}")).await;
                                 let output_filename_str = output_filename
                                     .file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or(&entry_title)
                                     .to_string();
 
-                                // Forward per-entry progress events
+                                let mut event_rx = downloader.subscribe_events();
                                 let mut progress_out = output.clone();
+
                                 let progress_handle = tokio::spawn(async move {
                                     use std::collections::HashMap;
                                     use cosmic::iced::futures::SinkExt as _;
-                                    use yt_dlp::events::DownloadEvent;
                                     let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
                                     while let Ok(event) = event_rx.recv().await {
                                         match &*event {
@@ -762,18 +824,34 @@ impl Application for Ytdlp {
                                 });
 
                                 if video_selected {
-                                    let _ = downloader
-                                        .download(&video, output_filename_str)
-                                        .video_quality(video_quality)
-                                        .video_codec(video_codec.clone())
-                                        .audio_quality(audio_quality)
-                                        .audio_codec(audio_codec.clone())
-                                        .execute()
-                                        .await;
+                                    let has_specific_format = video.select_video_format(video_quality, video_codec.clone()).is_some();
+                                    if has_specific_format {
+                                        let _ = downloader
+                                            .download(&video, output_filename_str)
+                                            .video_quality(video_quality)
+                                            .video_codec(video_codec.clone())
+                                            .audio_quality(audio_quality)
+                                            .audio_codec(audio_codec.clone())
+                                            .execute()
+                                            .await;
+                                    } else {
+                                        let _ = downloader
+                                            .download(&video, output_filename_str)
+                                            .execute()
+                                            .await;
+                                    }
                                 } else {
-                                    if let Some(audio_format) = video.select_audio_format(audio_quality, audio_codec.clone()) {
-                                        if let Some(audio_url) = audio_format.download_info.url.as_deref() {
-                                            let headers = audio_format.download_info.http_headers.clone();
+                                    let audio_format = video.select_audio_format(audio_quality, audio_codec.clone())
+                                        .or_else(|| {
+                                            video.formats.iter()
+                                                .find(|f| f.audio_ext.as_deref().unwrap_or("none") != "none")
+                                                .or_else(|| video.formats.first())
+                                                .cloned()
+                                        });
+
+                                    if let Some(format) = audio_format {
+                                        if let Some(audio_url) = format.download_info.url.as_deref() {
+                                            let headers = format.download_info.http_headers.clone();
                                             let dl_id = downloader
                                                 .download_manager()
                                                 .enqueue_with_headers(audio_url, output_filename, None, Some(headers))
@@ -804,6 +882,7 @@ impl Application for Ytdlp {
                         // ── Single video branch ──────────────────────────────────────
                         run_single_download(
                             download_id, video_selected, &url,
+                            custom_name, video_container_ext,
                             &downloader, &output_dir_ref, &audio_ext,
                             video_quality, video_codec, audio_quality, audio_codec,
                             &mut output, notify,
@@ -854,49 +933,39 @@ impl Application for Ytdlp {
         }
         Task::none()
     }
-
-    fn style(&self) -> Option<cosmic::iced::theme::Style> {
-        Some(cosmic::applet::style())
-    }
 }
 
+// ---------------------------------------------------------------------------
+// View helpers
+// ---------------------------------------------------------------------------
+
 impl Ytdlp {
+    /// Renders the expandable list of supported video & audio platforms.
     fn view_platforms(&self) -> Element<'_, Message> {
-        let Spacing { space_xxs, space_s, space_xs, .. } = cosmic::theme::active().cosmic().spacing;
-
-        // Two-column grid of popular platforms
-        const PLATFORMS: &[(&str, &str)] = &[
-            ("▶", "YouTube"),
-            ("🎵", "YouTube Music"),
-            ("📱", "TikTok"),
-            ("📸", "Instagram"),
-            ("🐦", "Twitter / X"),
-            ("📘", "Facebook"),
-            ("🎮", "Twitch"),
-            ("🎵", "SoundCloud"),
-            ("🎥", "Vimeo"),
-            ("🤖", "Reddit"),
-            ("📺", "Dailymotion"),
-            ("🎬", "Bilibili"),
-        ];
-
-        let mut left_col = column![].spacing(space_xxs);
-        let mut right_col = column![].spacing(space_xxs);
-
-        for (i, (icon, name)) in PLATFORMS.iter().enumerate() {
-            let label = cosmic::widget::text::caption(format!("{icon}  {name}"));
-            if i % 2 == 0 {
-                left_col = left_col.push(label);
-            } else {
-                right_col = right_col.push(label);
-            }
-        }
+        let Spacing {
+            space_xxs, space_xs, space_s, ..
+        } = cosmic::theme::active().cosmic().spacing;
 
         column![
             padded_control(divider::horizontal::default()).padding([space_xxs, space_s]),
             row![
-                left_col.width(Length::FillPortion(1)),
-                right_col.width(Length::FillPortion(1)),
+                cosmic::widget::text::body("▶ YouTube"),
+                cosmic::widget::text::body("🎵 TikTok"),
+                cosmic::widget::text::body("📸 Instagram"),
+            ]
+            .spacing(space_s)
+            .apply(padded_control),
+            row![
+                cosmic::widget::text::body("𝕏 Twitter/X"),
+                cosmic::widget::text::body("🟣 Twitch"),
+                cosmic::widget::text::body("🟠 SoundCloud"),
+            ]
+            .spacing(space_s)
+            .apply(padded_control),
+            row![
+                cosmic::widget::text::body("🔵 Facebook"),
+                cosmic::widget::text::body("🔴 Reddit"),
+                cosmic::widget::text::body("🟢 Spotify (podcasts)"),
             ]
             .spacing(space_s)
             .apply(padded_control),
@@ -909,12 +978,38 @@ impl Ytdlp {
     }
 
     fn view_video(&self, popup_id: Option<window::Id>) -> Element<'_, Message> {
+        let container_idx = VIDEO_CONTAINERS
+            .iter()
+            .position(|&c| c == self.video_container);
         let video_quality_idx = VIDEO_QUALITIES
             .iter()
             .position(|&q| q == self.video_quality);
         let video_codec_idx = VIDEO_CODECS.iter().position(|&c| c == self.video_codec);
 
         let Spacing { space_xxs, .. } = cosmic::theme::active().cosmic().spacing;
+
+        let container_dropdown: Element<'_, Message> = if let Some(pid) = popup_id {
+            Element::from(
+                cosmic::widget::dropdown::popup_dropdown(
+                    VIDEO_CONTAINER_LABELS,
+                    container_idx,
+                    Message::VideoContainerSelected,
+                    pid,
+                    Message::SurfaceAction,
+                    |m| m,
+                )
+                .width(Length::FillPortion(1)),
+            )
+        } else {
+            Element::from(
+                cosmic::widget::dropdown(
+                    VIDEO_CONTAINER_LABELS,
+                    container_idx,
+                    Message::VideoContainerSelected,
+                )
+                .width(Length::FillPortion(1)),
+            )
+        };
 
         let quality_dropdown: Element<'_, Message> = if let Some(pid) = popup_id {
             Element::from(
@@ -963,6 +1058,13 @@ impl Ytdlp {
         };
 
         column![
+            row![
+                body(fl!("video-format")).width(Length::FillPortion(1)),
+                container_dropdown,
+            ]
+            .align_y(Alignment::Center)
+            .spacing(space_xxs)
+            .apply(padded_control),
             row![
                 body(fl!("video-quality")).width(Length::FillPortion(1)),
                 quality_dropdown,
@@ -1037,15 +1139,15 @@ impl Ytdlp {
 
         column![
             row![
-                body(fl!("audio-quality")).width(Length::FillPortion(1)),
-                quality_dropdown,
+                body(fl!("audio-codec")).width(Length::FillPortion(1)),
+                codec_dropdown,
             ]
             .align_y(Alignment::Center)
             .spacing(space_xxs)
             .apply(padded_control),
             row![
-                body(fl!("audio-codec")).width(Length::FillPortion(1)),
-                codec_dropdown,
+                body(fl!("audio-quality")).width(Length::FillPortion(1)),
+                quality_dropdown,
             ]
             .align_y(Alignment::Center)
             .spacing(space_xxs)
