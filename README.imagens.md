@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="./Image1.png" alt="COSMIC Applet yt-dlp screenshot" width="700" />
+  <img src="./res/Screenshot_2026-08-30_23-23-57.png" alt="COSMIC Applet yt-dlp screenshot" width="700" />
 </p>
 
 ---
