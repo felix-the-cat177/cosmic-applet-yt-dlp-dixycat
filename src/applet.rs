@@ -165,6 +165,7 @@ async fn run_single_download(
     tokio::spawn(async move {
         use std::collections::HashMap;
         use cosmic::iced::futures::SinkExt as _;
+        use yt_dlp::events::DownloadEvent;
         let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
         while let Ok(event) = event_rx.recv().await {
             match &*event {
@@ -229,10 +230,14 @@ async fn run_single_download(
         }
     } else {
         // Audio download
-        let audio_format = video.select_audio_format(audio_quality, audio_codec.clone())
+        let audio_format = video
+            .select_audio_format(audio_quality, audio_codec.clone())
+            .cloned()
             .or_else(|| {
-                video.formats.iter()
-                    .find(|f| f.audio_ext.as_deref().unwrap_or("none") != "none")
+                video
+                    .formats
+                    .iter()
+                    .find(|f| f.codec_info.audio_codec.as_deref().unwrap_or("none") != "none")
                     .or_else(|| video.formats.first())
                     .cloned()
             });
@@ -774,6 +779,7 @@ impl Application for Ytdlp {
                                 let progress_handle = tokio::spawn(async move {
                                     use std::collections::HashMap;
                                     use cosmic::iced::futures::SinkExt as _;
+                                    use yt_dlp::events::DownloadEvent;
                                     let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
                                     while let Ok(event) = event_rx.recv().await {
                                         match &*event {
@@ -841,10 +847,14 @@ impl Application for Ytdlp {
                                             .await;
                                     }
                                 } else {
-                                    let audio_format = video.select_audio_format(audio_quality, audio_codec.clone())
+                                    let audio_format = video
+                                        .select_audio_format(audio_quality, audio_codec.clone())
+                                        .cloned()
                                         .or_else(|| {
-                                            video.formats.iter()
-                                                .find(|f| f.audio_ext.as_deref().unwrap_or("none") != "none")
+                                            video
+                                                .formats
+                                                .iter()
+                                                .find(|f| f.codec_info.audio_codec.as_deref().unwrap_or("none") != "none")
                                                 .or_else(|| video.formats.first())
                                                 .cloned()
                                         });
