@@ -3,7 +3,8 @@
 <p align="center">
   <a href="./README.md"><b>English</b></a> |
   <a href="./README.pt-BR.md"><b>Português (Brasil)</b></a> |
-  <a href="./README.es.md"><b>Español</b></a>
+  <a href="./README.es.md"><b>Español</b></a> |
+  <a href="./README.imagens.md"><b>🎬 Screenshots & Vídeo</b></a>
 </p>
 
 <p align="center">
@@ -11,11 +12,14 @@
 </p>
 
 <p align="center">
-  <img src="./res/applet-photo.png" alt="COSMIC Applet yt-dlp screenshot" width="350" />
+  <img src="./res/applet-photo.png" alt="COSMIC Applet yt-dlp screenshot" width="380" />
+</p>
+
+<p align="center">
+  <a href="./README.imagens.md">👉 <b>Clique aqui para ver fotos detalhadas e a demonstração em vídeo</b> 👈</a>
 </p>
 
 ---
-  <a href="./README.imagens.md"><b>Imagens (Fotos do applet)</b></a>
 
 ## ✨ Features
 
