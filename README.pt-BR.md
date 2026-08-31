@@ -3,7 +3,8 @@
 <p align="center">
   <a href="./README.md"><b>English</b></a> |
   <a href="./README.pt-BR.md"><b>Português (Brasil)</b></a> |
-  <a href="./README.es.md"><b>Español</b></a>
+  <a href="./README.es.md"><b>Español</b></a> |
+  <a href="./README.imagens.md"><b>🎬 Screenshots & Vídeo</b></a>
 </p>
 
 <p align="center">
