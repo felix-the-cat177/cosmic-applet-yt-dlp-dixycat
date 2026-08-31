@@ -96,7 +96,6 @@ async fn run_single_download(
     mut notify: notify_rust::Notification,
 ) {
     use cosmic::iced::futures::SinkExt;
-    use yt_dlp::events::DownloadEvent;
 
     let mut event_rx = downloader.subscribe_events();
 
