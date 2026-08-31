@@ -43,5 +43,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/felix-the-cat177/cosmic-applet-yt-dlp-dixycat.git
-        tag: v0.2.2
+        tag: v0.2.3
         commit: 64aa2f3cfd6199dbb646c0a0c4f8ea028303f8f1

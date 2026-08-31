@@ -1,14 +1,18 @@
 url = Insert URL
+filename = File name (optional)
 video = Video
 audio = Audio
-video-quality  = Video Quality
+video-format = Video Format
+video-quality = Video Quality
 video-codec = Video Codec
-audio-quality  = Audio Quality
+audio-quality = Audio Quality
 audio-codec = Audio Codec
 yt-dlp-failed = Failed to initialize yt-dlp
 metadata-failed = Failed to download metadata
 download-failed = Failed to download { $title }
+download-cancelled = Download cancelled: { $title }
 download = Download
+cancel = Cancel
 downloading = { $total ->
     [one] {$total} download in progress
     *[other] {$total} downloads in progress
@@ -29,5 +33,3 @@ eta-secs = ETA: { $secs }s
 calculating = calculating…
 platforms-tooltip = Supported platforms
 platforms-footer = …and 1800+ sites supported by yt-dlp
-filename = File name (optional)
-video-format = Container Format

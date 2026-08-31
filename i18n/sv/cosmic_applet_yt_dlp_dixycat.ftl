@@ -1,14 +1,18 @@
 url = Klistra in URL
+filename = Filnamn (valfritt)
 video = Video
 audio = Ljud
-video-quality  = Videokvalitet
+video-format = Videoformat
+video-quality = Videokvalitet
 video-codec = Videokodek
-audio-quality  = Ljudkvalitet
+audio-quality = Ljudkvalitet
 audio-codec = Ljudkodek
 yt-dlp-failed = Misslyckades med att initiera yt-dlp
 metadata-failed = Misslyckades med att ladda ned metadata
 download-failed = Misslyckades att ladda ned { $title }
+download-cancelled = Nedladdning avbruten: { $title }
 download = Ladda ned
+cancel = Avbryt
 downloading = { $total ->
     [one] {$total} nedladdning pågår
     *[other] {$total} nedladdningar pågår
@@ -29,5 +33,3 @@ eta-secs = ETA: { $secs }s
 calculating = beräknar…
 platforms-tooltip = Plattformar som stöds
 platforms-footer = …och 1800+ webbplatser via yt-dlp
-filename = Filnamn (valfritt)
-video-format = Videoformat

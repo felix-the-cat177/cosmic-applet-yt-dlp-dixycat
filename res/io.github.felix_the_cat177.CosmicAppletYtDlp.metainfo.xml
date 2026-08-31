@@ -17,17 +17,20 @@
     <p>
       A native applet for the COSMIC Desktop Environment that allows you to easily
       download videos and extract audio streams using yt-dlp with real-time progress,
-      quality and codec selection, and full playlist support.
+      quality and codec selection, custom filename renaming, container format choice (MP4, MKV, WebM),
+      cancellation support, and full playlist handling.
     </p>
     <p xml:lang="pt_BR">
       Um miniaplicativo nativo para o COSMIC Desktop que permite baixar vídeos e extrair
       áudios com praticidade usando yt-dlp, com progresso em tempo real, seleção de
-      qualidade e codec e suporte completo a playlists.
+      qualidade e codec, renomeação de arquivo, escolha de formato (MP4, MKV, WebM),
+      botão de cancelar e suporte completo a playlists.
     </p>
     <p xml:lang="es">
       Una miniaplicación nativa para COSMIC Desktop que permite descargar videos y extraer
       audios fácilmente usando yt-dlp, con progreso en tiempo real, selección de calidad y
-      códec, y soporte completo para listas de reproducción.
+      códec, cambio de nombre de archivo, elección de formato (MP4, MKV, WebM), botón de cancelar
+      y soporte completo para listas de reproducción.
     </p>
   </description>
   <launchable type="desktop-id">io.github.felix_the_cat177.CosmicAppletYtDlp.desktop</launchable>
@@ -37,6 +40,7 @@
       <image>https://raw.githubusercontent.com/felix-the-cat177/cosmic-applet-yt-dlp-dixycat/master/res/screenshot.png</image>
       <caption>COSMIC yt-dlp applet with frosted glass blur and playlist progress</caption>
       <caption xml:lang="pt_BR">Miniaplicativo COSMIC yt-dlp com vidro fosco e download de playlist</caption>
+      <caption xml:lang="es">Miniaplicación COSMIC yt-dlp con efecto de vidrio esmerilado y descarga de listas</caption>
     </screenshot>
   </screenshots>
   <categories>
@@ -45,9 +49,18 @@
   </categories>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.2.3" date="2026-08-30">
+      <description>
+        <p>Added download cancel button with cleanup, full Spanish language support, refined translations, custom filename renaming field, container format selection (MP4, MKV, WebM), expanded audio codecs (FLAC, WAV), and robust fallback for TikTok, Instagram, Twitter/X, and direct media URLs.</p>
+        <p xml:lang="pt_BR">Adicionado botão para cancelar downloads com limpeza automática, suporte completo ao idioma Espanhol, traduções corrigidas, campo para renomear arquivos, seleção de container de vídeo (MP4, MKV, WebM), novos codecs de áudio (FLAC, WAV) e fallback universal para TikTok, Instagram, Twitter/X e links diretos.</p>
+        <p xml:lang="es">Se agregó botón para cancelar descargas con limpieza automática, soporte completo para el idioma Español, traducciones refinadas, campo para renombrar archivos, selección de formato de vídeo (MP4, MKV, WebM), nuevos códecs de audio (FLAC, WAV) y compatibilidad universal para TikTok, Instagram, Twitter/X y enlaces directos.</p>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-08-30">
       <description>
         <p>Support for playlists, platform speed optimizations, real-time speed &amp; ETA, and frosted glass blur.</p>
+        <p xml:lang="pt_BR">Suporte a playlists, otimizações de velocidade, cálculo de taxa de download e tempo estimado em tempo real e efeito de vidro fosco com desfoque.</p>
+        <p xml:lang="es">Soporte para listas de reproducción, optimizaciones de velocidad, tasa de descarga y tiempo restante en tiempo real, y efecto de desenfoque de vidrio esmerilado.</p>
       </description>
     </release>
   </releases>
