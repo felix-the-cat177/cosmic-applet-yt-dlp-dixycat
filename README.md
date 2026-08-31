@@ -12,10 +12,10 @@
 
 <p align="center">
   <img src="./res/applet-photo.png" alt="COSMIC Applet yt-dlp screenshot" width="350" />
-  <a href="./README.imagens.md"><b>Imagens (Fotos do applet)</b></a> |
 </p>
 
 ---
+  <a href="./README.imagens.md"><b>Imagens (Fotos do applet)</b></a>
 
 ## ✨ Features
 
