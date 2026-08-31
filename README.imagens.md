@@ -3,5 +3,5 @@
 </p>
 
 <p align="center">
-  <img src="./Image1.png" alt="COSMIC Applet yt-dlp screenshot" width="500" />
+  <img src="./Image1.png" alt="COSMIC Applet yt-dlp screenshot" width="600" />
 </p>
