@@ -207,6 +207,11 @@ async fn run_download_job(
             cmd.arg("--merge-output-format").arg("webm");
             cmd.arg("--remux-video").arg("webm");
         }
+        // Embed title, artist (uploader) and thumbnail cover into the video file
+        cmd.arg("--embed-metadata");
+        cmd.arg("--embed-thumbnail");
+        cmd.arg("--add-metadata");
+        cmd.arg("--parse-metadata").arg("%(uploader)s:%(artist)s");
     } else {
         // Audio extraction
         cmd.arg("-x");
@@ -219,6 +224,14 @@ async fn run_download_job(
             AudioQuality::Worst => "9",
         };
         cmd.arg("--audio-quality").arg(audio_q);
+        // Embed title, artist, album art (thumbnail) into audio file
+        cmd.arg("--embed-metadata");
+        cmd.arg("--embed-thumbnail");
+        cmd.arg("--add-metadata");
+        cmd.arg("--embed-chapters");
+        // Map uploader -> artist, channel -> album_artist for music players
+        cmd.arg("--parse-metadata").arg("%(uploader)s:%(artist)s");
+        cmd.arg("--parse-metadata").arg("%(channel)s:%(album_artist)s");
     }
 
     cmd.arg(url);
