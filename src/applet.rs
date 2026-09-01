@@ -17,46 +17,12 @@ use cosmic::{Action, Application, Apply, Element};
 use ashpd::desktop::file_chooser::SelectedFiles;
 use notify_rust::Notification;
 
-use yt_dlp::VideoSelection;
-
 use crate::formats::{AudioCodec, AudioQuality, VideoCodec, VideoContainer, VideoQuality};
 use crate::{fetcher, fl, fl_str};
 
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
-
-/// Returns a unique filename in `dir` by appending `-2`, `-3`, … if the file
-/// already exists.
-async fn unique_path(dir: &std::path::Path, filename: &str) -> std::path::PathBuf {
-    let candidate = dir.join(filename);
-    if !candidate.exists() {
-        return candidate;
-    }
-
-    let stem = std::path::Path::new(filename)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(filename);
-    let ext = std::path::Path::new(filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-
-    let mut n = 2u32;
-    loop {
-        let name = if ext.trim().is_empty() {
-            format!("{stem}-{n}")
-        } else {
-            format!("{stem}-{n}.{ext}")
-        };
-        let candidate = dir.join(&name);
-        if !candidate.exists() {
-            return candidate;
-        }
-        n += 1;
-    }
-}
 
 /// Parses yt-dlp CLI progress output line into (percent, speed_mbps, eta_secs, downloaded_bytes, total_bytes)
 fn parse_ytdlp_progress_line(line: &str) -> Option<(f32, f64, Option<u64>, u64, u64)> {
@@ -125,29 +91,30 @@ fn parse_ytdlp_progress_line(line: &str) -> Option<(f32, f64, Option<u64>, u64, 
     Some((percent, speed_mbps, eta_secs, downloaded_bytes, total_bytes))
 }
 
-/// Removes leftover temporary files (`temp_video_*` and `temp_audio_*`) from
-/// `dir`. Errors are silently ignored — these are best-effort cleanups.
-async fn cleanup_temp_files(dir: &std::path::Path) {
+/// Cleans up empty (0-byte) files and leftover temporary files from `dir`.
+async fn cleanup_zero_and_temp_files(dir: &std::path::Path) {
     let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
         return;
     };
-    let mut tasks = Vec::new();
     while let Ok(Some(entry)) = entries.next_entry().await {
+        let Ok(meta) = entry.metadata().await else {
+            continue;
+        };
         let Ok(name) = entry.file_name().into_string() else {
             continue;
         };
-        if name.starts_with("temp_video_") || name.starts_with("temp_audio_") {
-            tasks.push(tokio::fs::remove_file(entry.path()));
+        if meta.is_file() {
+            // Remove 0KB empty corrupted files or leftover temporary part files
+            if meta.len() == 0 || name.ends_with(".part") || name.ends_with(".ytdl") || name.starts_with("temp_video_") || name.starts_with("temp_audio_") {
+                let _ = tokio::fs::remove_file(entry.path()).await;
+            }
         }
-    }
-    for task in tasks {
-        let _ = task.await;
     }
 }
 
-/// Runs a single-video download with live progress streaming across all platforms.
+/// Runs a download through the unified yt-dlp native binary engine with live progress streaming.
 #[allow(clippy::too_many_arguments)]
-async fn run_single_download(
+async fn run_download_job(
     download_id: u32,
     video_selected: bool,
     url: &str,
@@ -156,141 +123,44 @@ async fn run_single_download(
     downloader: &yt_dlp::Downloader,
     output_dir_ref: &std::path::Path,
     audio_ext: &str,
-    video_quality: yt_dlp::model::selector::VideoQuality,
-    video_codec: yt_dlp::model::selector::VideoCodecPreference,
-    audio_quality: yt_dlp::model::selector::AudioQuality,
-    audio_codec: yt_dlp::model::selector::AudioCodecPreference,
+    video_quality: VideoQuality,
+    audio_quality: AudioQuality,
     output: &mut cosmic::iced::futures::channel::mpsc::Sender<cosmic::Action<Message>>,
     mut notify: notify_rust::Notification,
 ) {
     use cosmic::iced::futures::SinkExt;
     use tokio::io::AsyncBufReadExt;
 
-    // Try to get title from library or query via CLI
-    let maybe_video = downloader.fetch_video_infos(url).await.ok();
-    let display_title = if let Some(ref v) = maybe_video {
-        v.title.clone()
-    } else {
-        custom_name.clone().unwrap_or_else(|| "Download".to_string())
-    };
+    // Detect if this is a playlist URL
+    let is_playlist = url.contains("list=") || url.contains("/playlist");
 
-    let base_name = if let Some(ref name) = custom_name {
+    // Extract title quickly for display and notifications
+    let title_output = tokio::process::Command::new(&downloader.libraries().youtube)
+        .arg("--print")
+        .arg("%(title)s")
+        .arg("--no-warnings")
+        .arg("--no-playlist")
+        .arg(url)
+        .output()
+        .await;
+
+    let extracted_title = title_output
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let display_title = custom_name.clone()
+        .or(extracted_title)
+        .unwrap_or_else(|| "Download".to_string());
+
+    let out_template = if let Some(ref name) = custom_name {
         let trimmed = name.trim();
         if !trimmed.is_empty() {
-            trimmed.to_string()
+            format!("{}/{}.%(ext)s", output_dir_ref.display(), trimmed)
         } else {
-            display_title.clone()
+            format!("{}/%(title)s.%(ext)s", output_dir_ref.display())
         }
-    } else {
-        display_title.clone()
-    };
-    let title = base_name.clone();
-
-    // Check if direct Rust-native download can be executed with events
-    let use_native = if let Some(ref video) = maybe_video {
-        if video_selected {
-            video.select_video_format(video_quality, video_codec.clone()).is_some()
-        } else {
-            video.select_audio_format(audio_quality, audio_codec.clone()).is_some()
-        }
-    } else {
-        false
-    };
-
-    if use_native {
-        if let Some(video) = maybe_video {
-            let output_filename = if video_selected {
-                unique_path(output_dir_ref, &format!("{base_name}.{video_container_ext}")).await
-            } else {
-                unique_path(output_dir_ref, &format!("{base_name}.{audio_ext}")).await
-            };
-            let output_filename_str = output_filename
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&title)
-                .to_string();
-
-            let mut event_rx = downloader.subscribe_events();
-            let mut progress_output = output.clone();
-
-            tokio::spawn(async move {
-                use std::collections::HashMap;
-                use cosmic::iced::futures::SinkExt as _;
-                use yt_dlp::events::DownloadEvent;
-                let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
-                while let Ok(event) = event_rx.recv().await {
-                    match &*event {
-                        DownloadEvent::DownloadProgress {
-                            download_id: sid, downloaded_bytes, total_bytes,
-                            speed_bytes_per_sec, eta_seconds,
-                        } => {
-                            streams.insert(*sid, (*downloaded_bytes, *total_bytes));
-                            let sum_dl: u64 = streams.values().map(|(d, _)| d).sum();
-                            let sum_tot: u64 = streams.values().map(|(_, t)| t).sum();
-                            let percent = if sum_tot > 0 { (sum_dl as f32 / sum_tot as f32) * 100.0 } else { 0.0 };
-                            let speed_mbps = speed_bytes_per_sec / 1_000_000.0;
-                            let eta = eta_seconds.filter(|&e| e > 0).or_else(|| {
-                                if *speed_bytes_per_sec > 10.0 && sum_tot > sum_dl {
-                                    Some(((sum_tot - sum_dl) as f64 / speed_bytes_per_sec) as u64)
-                                } else { None }
-                            });
-                            let _ = progress_output.send(cosmic::Action::App(
-                                Message::DownloadProgress {
-                                    id: download_id, percent, speed_mbps, eta_secs: eta,
-                                    downloaded_bytes: sum_dl, total_bytes: sum_tot,
-                                    is_post_processing: false,
-                                },
-                            )).await;
-                        }
-                        DownloadEvent::PostProcessStarted { .. } => {
-                            let sum_tot: u64 = streams.values().map(|(_, t)| t).sum();
-                            let _ = progress_output.send(cosmic::Action::App(
-                                Message::DownloadProgress {
-                                    id: download_id, percent: 100.0, speed_mbps: 0.0,
-                                    eta_secs: None, downloaded_bytes: sum_tot, total_bytes: sum_tot,
-                                    is_post_processing: true,
-                                },
-                            )).await;
-                        }
-                        _ => {}
-                    }
-                }
-            });
-
-            let dl_res = if video_selected {
-                downloader
-                    .download(&video, output_filename_str.clone())
-                    .video_quality(video_quality)
-                    .video_codec(video_codec)
-                    .audio_quality(audio_quality)
-                    .audio_codec(audio_codec)
-                    .execute()
-                    .await
-            } else {
-                downloader.download(&video, output_filename_str.clone()).execute().await
-            };
-
-            cleanup_temp_files(&downloader.output_dir()).await;
-
-            if dl_res.is_err() {
-                tokio::spawn(async move {
-                    let _ = notify.summary(&fl_str!("download-failed", title = title)).show_async().await;
-                });
-            } else {
-                tokio::spawn(async move {
-                    let _ = notify.summary(&fl_str!("finished-download", title = title)).show_async().await;
-                });
-            }
-            let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
-            return;
-        }
-    }
-
-    // ── Universal CLI streaming download (TikTok, Instagram, X, Facebook, Reddit, Direct URLs, etc.) ──
-    let custom_stem = custom_name.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let out_template = if let Some(name) = custom_stem {
-        let ext = if video_selected { video_container_ext } else { audio_ext };
-        format!("{}/{}.{}", output_dir_ref.display(), name, ext)
     } else {
         format!("{}/%(title)s.%(ext)s", output_dir_ref.display())
     };
@@ -299,13 +169,50 @@ async fn run_single_download(
     cmd.arg("--ffmpeg-location").arg(&downloader.libraries().ffmpeg);
     cmd.arg("--newline");
     cmd.arg("--progress");
+    cmd.arg("--no-mtime"); // Set modification time to download time
     cmd.arg("-o").arg(&out_template);
 
-    if !video_selected {
-        cmd.arg("-x").arg("--audio-format").arg(audio_ext);
-    } else if video_container_ext == "mkv" || video_container_ext == "webm" {
-        cmd.arg("--remux-video").arg(video_container_ext);
+    if is_playlist {
+        cmd.arg("--yes-playlist");
+    } else {
+        cmd.arg("--no-playlist");
     }
+
+    if video_selected {
+        // Video format selection
+        let format_filter = match video_quality {
+            VideoQuality::Highest => "bestvideo+bestaudio/best",
+            VideoQuality::FHD => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            VideoQuality::HD => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            VideoQuality::SD => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+            VideoQuality::Lowest => "worstvideo+worstaudio/worst",
+        };
+        cmd.arg("-f").arg(format_filter);
+
+        if video_container_ext == "mp4" {
+            cmd.arg("--merge-output-format").arg("mp4");
+            cmd.arg("--remux-video").arg("mp4");
+        } else if video_container_ext == "mkv" {
+            cmd.arg("--merge-output-format").arg("mkv");
+            cmd.arg("--remux-video").arg("mkv");
+        } else if video_container_ext == "webm" {
+            cmd.arg("--merge-output-format").arg("webm");
+            cmd.arg("--remux-video").arg("webm");
+        }
+    } else {
+        // Audio extraction
+        cmd.arg("-x");
+        cmd.arg("--audio-format").arg(audio_ext);
+        let audio_q = match audio_quality {
+            AudioQuality::Best => "0",
+            AudioQuality::High => "2",
+            AudioQuality::Medium => "5",
+            AudioQuality::Low => "7",
+            AudioQuality::Worst => "9",
+        };
+        cmd.arg("--audio-quality").arg(audio_q);
+    }
+
     cmd.arg(url);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -314,7 +221,7 @@ async fn run_single_download(
         Ok(c) => c,
         Err(_) => {
             tokio::spawn(async move {
-                let _ = notify.summary(&fl_str!("download-failed", title = title)).show_async().await;
+                let _ = notify.summary(&fl_str!("download-failed", title = display_title)).show_async().await;
             });
             let _ = output.send(cosmic::Action::App(Message::Finished(download_id))).await;
             return;
@@ -338,6 +245,21 @@ async fn run_single_download(
                         total_bytes: 0,
                         is_post_processing: true,
                     })).await;
+                } else if line.contains("[download] Downloading item") || line.contains("[download] Downloading video") {
+                    // Playlist item progress
+                    if let Some(item_idx) = line.find("item ") {
+                        let after = &line[item_idx + 5..];
+                        if let Some(of_idx) = after.find(" of ") {
+                            let cur = after[..of_idx].trim().parse::<u32>().unwrap_or(1);
+                            let tot = after[of_idx + 4..].split_whitespace().next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
+                            let _ = progress_out.send(cosmic::Action::App(Message::PlaylistProgress {
+                                id: download_id,
+                                current: cur,
+                                total: tot,
+                                video_title: String::new(),
+                            })).await;
+                        }
+                    }
                 } else if let Some((percent, speed_mbps, eta_secs, dl_bytes, tot_bytes)) = parse_ytdlp_progress_line(&line) {
                     let _ = progress_out.send(cosmic::Action::App(Message::DownloadProgress {
                         id: download_id,
@@ -354,15 +276,15 @@ async fn run_single_download(
     }
 
     let status = child.wait().await;
-    cleanup_temp_files(&downloader.output_dir()).await;
+    cleanup_zero_and_temp_files(output_dir_ref).await;
 
     if status.map_or(false, |s| s.success()) {
         tokio::spawn(async move {
-            let _ = notify.summary(&fl_str!("finished-download", title = title)).show_async().await;
+            let _ = notify.summary(&fl_str!("finished-download", title = display_title)).show_async().await;
         });
     } else {
         tokio::spawn(async move {
-            let _ = notify.summary(&fl_str!("download-failed", title = title)).show_async().await;
+            let _ = notify.summary(&fl_str!("download-failed", title = display_title)).show_async().await;
         });
     }
 
@@ -804,25 +726,12 @@ impl Application for Ytdlp {
                 let output_dir_ref = output_dir.clone();
                 let video_container_ext = self.video_container.extension();
                 let audio_ext = self.audio_codec.extension();
-                let video_quality: yt_dlp::model::selector::VideoQuality =
-                    self.video_quality.into();
-                let video_codec: yt_dlp::model::selector::VideoCodecPreference =
-                    self.video_codec.into();
-                let audio_quality: yt_dlp::model::selector::AudioQuality =
-                    self.audio_quality.into();
-                let audio_codec: yt_dlp::model::selector::AudioCodecPreference =
-                    self.audio_codec.into();
-
-                /// Detects if a URL looks like a playlist (YouTube list= param, etc.)
-                fn is_playlist_url(url: &str) -> bool {
-                    url.contains("list=") || url.contains("/playlist")
-                }
+                let video_quality = self.video_quality;
+                let audio_quality = self.audio_quality;
 
                 return Task::stream(cosmic::iced::stream::channel(
                     64,
                     move |mut output: cosmic::iced::futures::channel::mpsc::Sender<Action<Message>>| async move {
-                        use cosmic::iced::futures::SinkExt;
-
                         let mut notify = Notification::new()
                             .appname("yt-dlp applet")
                             .icon("multimedia-video-player-symbolic")
@@ -833,188 +742,24 @@ impl Application for Ytdlp {
 
                         tokio::select! {
                             _ = &mut cancel_rx => {
-                                cleanup_temp_files(&downloader.output_dir()).await;
+                                cleanup_zero_and_temp_files(&output_dir_ref).await;
                                 let _ = output.send(Action::App(Message::Finished(download_id))).await;
                             }
                             _ = async {
-                                // ── Playlist branch ──────────────────────────────────────────
-                                if is_playlist_url(&url) {
-                                    let playlist = match downloader.fetch_playlist_infos(&url).await {
-                                        Ok(p) if !p.entries.is_empty() => p,
-                                        _ => {
-                                            run_single_download(
-                                                download_id, video_selected, &url,
-                                                custom_name, video_container_ext,
-                                                &downloader, &output_dir_ref, &audio_ext,
-                                                video_quality, video_codec, audio_quality, audio_codec,
-                                                &mut output, notify,
-                                            ).await;
-                                            return;
-                                        }
-                                    };
-
-                                    let total = playlist.entries.len() as u32;
-                                    let playlist_title = playlist.title.clone();
-
-                                    // Notify: fetching playlist
-                                    let _ = notify
-                                        .summary(&fl_str!("playlist-fetching", title = playlist_title.clone()))
-                                        .show_async()
-                                        .await;
-
-                                    let mut downloaded_ok: u32 = 0;
-
-                                    for (idx, entry) in playlist.entries.iter().enumerate() {
-                                        let current = idx as u32 + 1;
-
-                                        let video = match downloader.fetch_video_infos(&entry.url).await {
-                                            Ok(v) => v,
-                                            Err(_) => continue,
-                                        };
-
-                                        let entry_title = video.title.clone();
-
-                                        let _ = output.send(Action::App(Message::PlaylistProgress {
-                                            id: download_id,
-                                            current,
-                                            total,
-                                            video_title: entry_title.clone(),
-                                        })).await;
-
-                                        let output_filename = if video_selected {
-                                            unique_path(&output_dir_ref, &format!("{entry_title}.{video_container_ext}")).await
-                                        } else {
-                                            unique_path(&output_dir_ref, &format!("{entry_title}.{audio_ext}")).await
-                                        };
-                                        let output_filename_str = output_filename
-                                            .file_name()
-                                            .and_then(|n| n.to_str())
-                                            .unwrap_or(&entry_title)
-                                            .to_string();
-
-                                        let mut event_rx = downloader.subscribe_events();
-                                        let mut progress_out = output.clone();
-
-                                        let progress_handle = tokio::spawn(async move {
-                                            use std::collections::HashMap;
-                                            use cosmic::iced::futures::SinkExt as _;
-                                            use yt_dlp::events::DownloadEvent;
-                                            let mut streams: HashMap<u64, (u64, u64)> = HashMap::new();
-                                            while let Ok(event) = event_rx.recv().await {
-                                                match &*event {
-                                                    DownloadEvent::DownloadProgress {
-                                                        download_id: sid, downloaded_bytes, total_bytes,
-                                                        speed_bytes_per_sec, eta_seconds,
-                                                    } => {
-                                                        streams.insert(*sid, (*downloaded_bytes, *total_bytes));
-                                                        let sum_dl: u64 = streams.values().map(|(d, _)| d).sum();
-                                                        let sum_total: u64 = streams.values().map(|(_, t)| t).sum();
-                                                        let percent = if sum_total > 0 {
-                                                            (sum_dl as f32 / sum_total as f32) * 100.0
-                                                        } else { 0.0 };
-                                                        let speed_mbps = speed_bytes_per_sec / 1_000_000.0;
-                                                        let eta = eta_seconds
-                                                            .filter(|&e| e > 0)
-                                                            .or_else(|| {
-                                                                if *speed_bytes_per_sec > 10.0 && sum_total > sum_dl {
-                                                                    Some(((sum_total - sum_dl) as f64 / speed_bytes_per_sec) as u64)
-                                                                } else { None }
-                                                            });
-                                                        let _ = progress_out.send(Action::App(
-                                                            Message::DownloadProgress {
-                                                                id: download_id,
-                                                                percent, speed_mbps, eta_secs: eta,
-                                                                downloaded_bytes: sum_dl,
-                                                                total_bytes: sum_total,
-                                                                is_post_processing: false,
-                                                            },
-                                                        )).await;
-                                                    }
-                                                    DownloadEvent::PostProcessStarted { .. } => {
-                                                        let sum_total: u64 = streams.values().map(|(_, t)| t).sum();
-                                                        let _ = progress_out.send(Action::App(
-                                                            Message::DownloadProgress {
-                                                                id: download_id,
-                                                                percent: 100.0, speed_mbps: 0.0,
-                                                                eta_secs: None,
-                                                                downloaded_bytes: sum_total,
-                                                                total_bytes: sum_total,
-                                                                is_post_processing: true,
-                                                            },
-                                                        )).await;
-                                                    }
-                                                    _ => {}
-                                                }
-                                            }
-                                        });
-
-                                        if video_selected {
-                                            let has_specific_format = video.select_video_format(video_quality, video_codec.clone()).is_some();
-                                            if has_specific_format {
-                                                let _ = downloader
-                                                    .download(&video, output_filename_str)
-                                                    .video_quality(video_quality)
-                                                    .video_codec(video_codec.clone())
-                                                    .audio_quality(audio_quality)
-                                                    .audio_codec(audio_codec.clone())
-                                                    .execute()
-                                                    .await;
-                                            } else {
-                                                let _ = downloader
-                                                    .download(&video, output_filename_str)
-                                                    .execute()
-                                                    .await;
-                                            }
-                                        } else {
-                                            let audio_format = video
-                                                .select_audio_format(audio_quality, audio_codec.clone())
-                                                .cloned()
-                                                .or_else(|| {
-                                                    video
-                                                        .formats
-                                                        .iter()
-                                                        .find(|f| f.codec_info.audio_codec.as_deref().unwrap_or("none") != "none")
-                                                        .or_else(|| video.formats.first())
-                                                        .cloned()
-                                                });
-
-                                            if let Some(format) = audio_format {
-                                                if let Some(audio_url) = format.download_info.url.as_deref() {
-                                                    let headers = format.download_info.http_headers.clone();
-                                                    let dl_id = downloader
-                                                        .download_manager()
-                                                        .enqueue_with_headers(audio_url, output_filename, None, Some(headers))
-                                                        .await;
-                                                    let _ = downloader.download_manager().wait_for_completion(dl_id).await;
-                                                }
-                                            }
-                                        }
-
-                                        progress_handle.abort();
-                                        downloaded_ok += 1;
-                                        cleanup_temp_files(&downloader.output_dir()).await;
-                                    }
-
-                                    // Final notification
-                                    let pt = playlist_title.clone();
-                                    let count = downloaded_ok;
-                                    tokio::spawn(async move {
-                                        let _ = notify
-                                            .summary(&fl_str!("playlist-finished", title = pt, count = count))
-                                            .show_async()
-                                            .await;
-                                    });
-                                    let _ = output.send(Action::App(Message::Finished(download_id))).await;
-                                } else {
-                                    // ── Single video branch ──────────────────────────────────────
-                                    run_single_download(
-                                        download_id, video_selected, &url,
-                                        custom_name, video_container_ext,
-                                        &downloader, &output_dir_ref, &audio_ext,
-                                        video_quality, video_codec, audio_quality, audio_codec,
-                                        &mut output, notify,
-                                    ).await;
-                                }
+                                run_download_job(
+                                    download_id,
+                                    video_selected,
+                                    &url,
+                                    custom_name,
+                                    video_container_ext,
+                                    &downloader,
+                                    &output_dir_ref,
+                                    audio_ext,
+                                    video_quality,
+                                    audio_quality,
+                                    &mut output,
+                                    notify,
+                                ).await;
                             } => {}
                         }
                     },
@@ -1042,8 +787,9 @@ impl Application for Ytdlp {
                 if let Some(dl) = self.active_downloads.iter_mut().find(|d| d.id == id) {
                     dl.playlist_current = Some(current);
                     dl.playlist_total = Some(total);
-                    dl.playlist_title = Some(video_title);
-                    // Reset per-entry progress bar
+                    if !video_title.is_empty() {
+                        dl.playlist_title = Some(video_title);
+                    }
                     dl.percent = 0.0;
                     dl.downloaded_bytes = 0;
                     dl.total_bytes = 0;
@@ -1293,13 +1039,14 @@ impl Ytdlp {
         } = cosmic::theme::active().cosmic().spacing;
 
         // Playlist header line: "Playlist 3/15 – Some Video Title"
-        let playlist_line = if let (Some(cur), Some(tot), Some(vtitle)) =
-            (dl.playlist_current, dl.playlist_total, &dl.playlist_title)
+        let playlist_line = if let (Some(cur), Some(tot)) =
+            (dl.playlist_current, dl.playlist_total)
         {
+            let title = dl.playlist_title.clone().unwrap_or_default();
             Some(fl!("playlist-downloading",
                 current = cur,
                 total = tot,
-                title = vtitle.clone()
+                title = title
             ))
         } else {
             None
