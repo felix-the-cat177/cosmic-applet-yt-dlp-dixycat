@@ -137,8 +137,9 @@ async fn run_download_job(
 
     // Extract title quickly for display and notifications
     let title_output = tokio::process::Command::new(&downloader.libraries().youtube)
-        .arg("--print")
-        .arg("%(title)s")
+        .arg("--force-ipv4")
+        .arg("--extractor-args").arg("youtube:player_client=android,web")
+        .arg("--print").arg("%(title)s")
         .arg("--no-warnings")
         .arg("--no-playlist")
         .arg(url)
@@ -168,6 +169,12 @@ async fn run_download_job(
 
     let mut cmd = tokio::process::Command::new(&downloader.libraries().youtube);
     cmd.arg("--ffmpeg-location").arg(&downloader.libraries().ffmpeg);
+    cmd.arg("--force-ipv4");
+    cmd.arg("--extractor-args").arg("youtube:player_client=android,web");
+    cmd.arg("--socket-timeout").arg("30");
+    cmd.arg("--retries").arg("10");
+    cmd.arg("--fragment-retries").arg("10");
+    cmd.arg("--retry-sleep").arg("2");
     cmd.arg("--newline");
     cmd.arg("--progress");
     cmd.arg("--no-mtime"); // Set modification time to download time
@@ -236,7 +243,7 @@ async fn run_download_job(
         tokio::spawn(async move {
             use cosmic::iced::futures::SinkExt as _;
             while let Ok(Some(line)) = reader.next_line().await {
-                if line.contains("[Merger]") || line.contains("[ExtractAudio]") || line.contains("[Fixup]") || line.contains("[ffmpeg]") {
+                if line.contains("[Merger]") || line.contains("[ExtractAudio]") || line.contains("[Fixup]") || line.contains("[ffmpeg]") || line.contains("[VideoRemuxer]") {
                     let _ = progress_out.send(cosmic::Action::App(Message::DownloadProgress {
                         id: download_id,
                         percent: 100.0,
