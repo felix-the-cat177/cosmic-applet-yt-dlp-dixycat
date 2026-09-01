@@ -49,11 +49,11 @@
   </categories>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="0.2.4" date="2026-09-01">
+    <release version="0.2.5" date="2026-09-01">
       <description>
-        <p>Switched to unified native yt-dlp engine to prevent YouTube 403 and 0KB file errors, added automatic 0-byte residue cleanup, live progress parsing for all 1800+ supported sites, scrollable popup container, download cancel button, full Spanish language support, custom filename input, and container format selection.</p>
-        <p xml:lang="pt_BR">Migração para o motor nativo direto do yt-dlp corrigindo erros de 0KB e bloqueios 403 do YouTube, limpeza automática de resíduos, progresso em tempo real para todos os mais de 1800 sites suportados, rolagem vertical suave da interface, botão de cancelar downloads, suporte completo ao idioma Espanhol, renomeação de arquivos e seleção de containers (MP4, MKV, WebM).</p>
-        <p xml:lang="es">Migración al motor nativo directo de yt-dlp corrigiendo errores de archivos de 0KB y bloqueos 403 de YouTube, limpieza automática de residuos, progreso en tiempo real para más de 1800 sitios compatibles, interfaz con desplazamiento vertical, botón para cancelar descargas, soporte completo para Español, renombrado de archivos y selección de formatos de vídeo (MP4, MKV, WebM).</p>
+        <p>Automatic metadata embedding (title, artist, album art/thumbnail, chapters) for all downloaded audio and video files. Also includes YouTube SABR bypass via android player client and IPv4 forcing, 0KB file fix, cancel button, real-time progress, scrollable UI, and Spanish translation.</p>
+        <p xml:lang="pt_BR">Incorporação automática de metadados (título, artista, capa/thumbnail, capítulos) em todos os arquivos de áudio e vídeo baixados. Inclui também bypass do SABR do YouTube via cliente Android e forçamento de IPv4, correção de arquivos 0KB, botão cancelar, progresso em tempo real e interface com rolagem.</p>
+        <p xml:lang="es">Incrustación automática de metadatos (título, artista, portada/miniatura, capítulos) en todos los archivos de audio y vídeo descargados. También incluye bypass de SABR de YouTube mediante cliente Android e IPv4 forzado, corrección de archivos de 0KB, botón cancelar, progreso en tiempo real e interfaz desplazable.</p>
       </description>
     </release>
     <release version="0.2.1" date="2026-08-30">
