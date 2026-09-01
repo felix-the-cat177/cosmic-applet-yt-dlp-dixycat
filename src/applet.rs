@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use std::collections::HashMap;
+use cosmic::iced::futures::SinkExt;
 use std::path::PathBuf;
 
 use cosmic::app::{Core, Task};
