@@ -21,6 +21,11 @@ icons-src := 'res' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icons
 icons-path := 'share' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icons
 icons-dst := base-dir / icons-path
 
+icons-sym := APPID + '-symbolic.svg'
+icons-sym-src := 'res' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icons-sym
+icons-sym-path := 'share' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icons-sym
+icons-sym-dst := base-dir / icons-sym-path
+
 # Compiles with debug profile
 build-debug *args:
     cargo build {{args}}
@@ -35,6 +40,7 @@ install:
     install -Dm0644 {{desktop-src}} {{desktop-dst}}
     install -Dm0644 {{metainfo-src}} {{metainfo-dst}}
     install -Dm0644 {{icons-src}} {{icons-dst}}
+    install -Dm0644 {{icons-sym-src}} {{icons-sym-dst}}
 
 
 # Uninstalls globally installed files
@@ -43,6 +49,7 @@ uninstall:
     rm {{desktop-dst}}
     rm {{metainfo-dst}}
     rm {{icons-dst}}
+    rm {{icons-sym-dst}}
 
 
 # Installs files locally
@@ -51,14 +58,16 @@ install-local:
     install -Dm0755  ~/.local/bin/{{name}}
     install -Dm0644  ${XDG_DATA_HOME:-~/.local/share}/{{desktop-path}}
     install -Dm0644  ${XDG_DATA_HOME:-~/.local/share}/{{metainfo-path}}
-    install -Dm0644  ${XDG_DATA_HOME:-~/.local/share}/{{icons-dst}}
+    install -Dm0644  ${XDG_DATA_HOME:-~/.local/share}/{{icons-path}}
+    install -Dm0644  ${XDG_DATA_HOME:-~/.local/share}/{{icons-sym-path}}
 
 # Uninstalls locally installed files
 uninstall-local:
     rm ~/.local/bin/{{name}}
     rm ${XDG_DATA_HOME:-~/.local/share}/{{desktop-path}}
     rm ${XDG_DATA_HOME:-~/.local/share}/{{metainfo-path}}
-    rm ${XDG_DATA_HOME:-~/.local/share}/{{icons-dst}}
+    rm ${XDG_DATA_HOME:-~/.local/share}/{{icons-path}}
+    rm ${XDG_DATA_HOME:-~/.local/share}/{{icons-sym-path}}
 
 # Compiles and packages deb with release profile
 build-deb:

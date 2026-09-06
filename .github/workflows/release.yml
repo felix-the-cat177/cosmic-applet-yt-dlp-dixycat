@@ -63,6 +63,7 @@ jobs:
 
           mkdir -p ./$NAME
           cp ./target/release/$NAME ./res/*.desktop ./res/*.metainfo.xml ./res/install.sh ./$NAME/
+          cp -r ./res/icons ./$NAME/
           strip -s ./$NAME/$NAME
           tar -czvf $NAME-$ARCH.tar.gz $NAME
 

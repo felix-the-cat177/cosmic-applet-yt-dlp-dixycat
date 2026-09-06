@@ -138,7 +138,7 @@ async fn run_download_job(
     // Extract title quickly for display and notifications
     let title_output = tokio::process::Command::new(&downloader.libraries().youtube)
         .arg("--force-ipv4")
-        .arg("--extractor-args").arg("youtube:player_client=android,web")
+        .arg("--extractor-args").arg("youtube:player_client=default,web_embedded,ios")
         .arg("--print").arg("%(title)s")
         .arg("--no-warnings")
         .arg("--no-playlist")
@@ -167,10 +167,15 @@ async fn run_download_job(
         format!("{}/%(title)s.%(ext)s", output_dir_ref.display())
     };
 
+    let ffmpeg_path = &downloader.libraries().ffmpeg;
+    let ffmpeg_dir = ffmpeg_path.parent().unwrap_or_else(|| std::path::Path::new("/usr/bin"));
+    let has_ffprobe = ffmpeg_dir.join("ffprobe").exists()
+        || std::path::Path::new("/usr/bin/ffprobe").exists();
+
     let mut cmd = tokio::process::Command::new(&downloader.libraries().youtube);
-    cmd.arg("--ffmpeg-location").arg(&downloader.libraries().ffmpeg);
+    cmd.arg("--ffmpeg-location").arg(ffmpeg_dir);
     cmd.arg("--force-ipv4");
-    cmd.arg("--extractor-args").arg("youtube:player_client=android,web");
+    cmd.arg("--extractor-args").arg("youtube:player_client=default,web_embedded,ios");
     cmd.arg("--socket-timeout").arg("30");
     cmd.arg("--retries").arg("10");
     cmd.arg("--fragment-retries").arg("10");
@@ -209,7 +214,9 @@ async fn run_download_job(
         }
         // Embed title, artist (uploader) and thumbnail cover into the video file
         cmd.arg("--embed-metadata");
-        cmd.arg("--embed-thumbnail");
+        if has_ffprobe {
+            cmd.arg("--embed-thumbnail");
+        }
         cmd.arg("--add-metadata");
         cmd.arg("--parse-metadata").arg("%(uploader)s:%(artist)s");
     } else {
@@ -226,7 +233,9 @@ async fn run_download_job(
         cmd.arg("--audio-quality").arg(audio_q);
         // Embed title, artist, album art (thumbnail) into audio file
         cmd.arg("--embed-metadata");
-        cmd.arg("--embed-thumbnail");
+        if has_ffprobe {
+            cmd.arg("--embed-thumbnail");
+        }
         cmd.arg("--add-metadata");
         cmd.arg("--embed-chapters");
         // Map uploader -> artist, channel -> album_artist for music players

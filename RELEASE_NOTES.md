@@ -1,34 +1,32 @@
-## 🚀 O que há de novo na v0.2.5 / What's New in v0.2.5
+## 🚀 O que há de novo na v0.2.6 / What's New in v0.2.6
 
 ### 🇧🇷 Português
-- 🎵 **Metadados Automáticos:** Todos os arquivos baixados agora recebem automaticamente **título, nome do artista, foto da capa/thumbnail** e demais tags — visíveis no Reprodutor de Mídia COSMIC, Nautilus e qualquer player.
-- 🔧 **Correção Crítica (Zero-Byte / 0KB):** Motor nativo `yt-dlp` com decifradores atualizados, eliminando erros 403 e arquivos corrompidos de 0KB.
-- 🌐 **Bypass SABR/IPv4:** Flags `--force-ipv4` e `--extractor-args youtube:player_client=android,web` para contornar o throttling do YouTube.
-- 🛑 **Botão Cancelar Download:** Cancelamento imediato de qualquer download ativo.
-- 📊 **Progresso em Tempo Real:** Velocidade, porcentagem, MBs e tempo estimado para todos os 1800+ sites.
-- 📜 **Interface com Rolagem:** Popup com rolagem vertical suave.
-- 🌐 **Suporte ao Espanhol:** Tradução completa em Español.
-- 🏷️ **Renomeação e Formatos:** Campo de nome personalizado, containers MP4/MKV/WebM, codecs FLAC/WAV.
+- 🎨 **Ícone no Painel e Dock Corrigido:** Os ícones SVG (normal e simbólico) agora são empacotados corretamente dentro dos pacotes `.deb`, `.rpm` e `.tar.gz`. O ícone agora aparece nas Configurações do COSMIC, na Dock e no Painel superior.
+- 🛡️ **Correção da Falha de Inicialização (`ChecksumMismatch`):** O applet não trava mais com erro de checksum ao tentar baixar o FFmpeg. Agora ele detecta automaticamente o FFmpeg do sistema e trata downloads com tolerância a falhas.
+- 🎬 **Downloads do YouTube (Vídeo e Música) Restaurados:**
+  - Contorno do bloqueio SABR do YouTube com fallback para clientes `default,web_embedded,ios`.
+  - Correção na integração do FFmpeg e suporte a `ffprobe` para incorporação de miniaturas/capa sem travamentos de pós-processamento.
+  - Download e validação automática do binário oficial mais recente do `yt-dlp`.
+- 📦 **Dependência Oficial do FFmpeg no Pacote DEB:** O pacote `.deb` agora declara `ffmpeg` como dependência, instalando-o nativamente pelo gerenciador de pacotes do sistema (`apt`).
 
 ---
 
 ### 🇺🇸 English
-- 🎵 **Automatic Metadata Embedding:** All downloaded files now get **title, artist, album art (thumbnail)** and full tags embedded — shown correctly in COSMIC Media Player, file managers, and any player.
-- 🔧 **Critical Fix (0KB files):** Unified native yt-dlp engine with updated ciphers, preventing YouTube 403 errors and empty 0KB files.
-- 🌐 **SABR/IPv4 Bypass:** `--force-ipv4` and `--extractor-args youtube:player_client=android,web` to bypass YouTube throttling.
-- 🛑 **Cancel Download Button:** Instant cancellation of any active download.
-- 📊 **Real-Time Progress:** Speed, %, MBs, and ETA for all 1800+ supported sites.
-- 📜 **Scrollable Popup UI.**
-- 🌐 **Spanish Language Support.**
-- 🏷️ **Custom Filenames & Format Selectors:** MP4/MKV/WebM containers, FLAC/WAV codecs.
+- 🎨 **Panel & Dock Icon Fixed:** SVG icons (standard and symbolic) are now properly bundled inside `.deb`, `.rpm`, and `.tar.gz` packages. The applet icon now displays correctly in COSMIC Settings, Dock, and Panel.
+- 🛡️ **Startup Crash Fixed (`ChecksumMismatch`):** The applet no longer panics during launch when checking FFmpeg. It automatically links to system FFmpeg/FFprobe with fault-tolerant download fallback.
+- 🎬 **YouTube Downloads (Video & Audio) Restored:**
+  - Bypassed YouTube's SABR-only restrictions using `default,web_embedded,ios` clients.
+  - Fixed FFmpeg directory discovery and `ffprobe` detection for embedding thumbnails and album art without postprocessing errors.
+  - Automatic download and integrity validation for the latest official `yt-dlp` binary.
+- 📦 **Native FFmpeg Dependency in DEB:** Added `ffmpeg` to package dependencies for automatic installation via `apt`.
 
 ---
 
 ### 🇪🇸 Español
-- 🎵 **Metadatos Automáticos:** Todos los archivos descargados reciben **título, artista, portada/miniatura** y etiquetas completas.
-- 🔧 **Corrección Crítica (Archivos 0KB):** Motor nativo yt-dlp con descifrado actualizado.
-- 🌐 **Bypass SABR/IPv4:** Evita el throttling y bloqueos de YouTube.
-- 🛑 **Botón Cancelar Descarga.**
-- 📊 **Progreso en Tiempo Real.**
-- 📜 **Interfaz Desplazable.**
-- 🌐 **Soporte Completo en Español.**
+- 🎨 **Icono en Panel y Dock Corregido:** Los iconos SVG ahora se empaquetan correctamente en `.deb`, `.rpm` y `.tar.gz`.
+- 🛡️ **Solución al Cierre Inesperado (`ChecksumMismatch`):** Detección automática de FFmpeg del sistema y tolerancia a fallos.
+- 🎬 **Descargas de YouTube (Video y Música) Restauradas:**
+  - Evita el bloqueo SABR de YouTube con clientes `default,web_embedded,ios`.
+  - Detección de `ffprobe` para incrustación de carátulas sin errores de postprocesamiento.
+  - Actualización automática al último motor oficial de `yt-dlp`.
+- 📦 **Dependencia Nativa de FFmpeg:** Añadido `ffmpeg` a las dependencias de instalación en `.deb`.
