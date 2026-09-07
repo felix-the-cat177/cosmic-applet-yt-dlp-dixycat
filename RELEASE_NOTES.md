@@ -1,3 +1,26 @@
+## 🚀 O que há de novo na v0.2.7 / What's New in v0.2.7
+
+### 🇧🇷 Português
+- 🔄 **Auto-Atualização Automática do yt-dlp:** O applet agora verifica e baixa automaticamente a versão mais recente do `yt-dlp` em segundo plano ao iniciar, garantindo compatibilidade contínua com mudanças do YouTube sem necessidade de atualizar o applet manualmente.
+- ⚠️ **Notificação de Atualização em Caso de Falha:** Se um download falhar devido a mudanças no YouTube ou erros do extrator, o applet tenta atualizar o `yt-dlp` automaticamente e notifica o usuário para tentar novamente.
+- 🔍 **Detecção Proativa de Versões:** Verificação da versão instalada do `yt-dlp` e comparação com a versão estável mais recente nos releases oficiais do GitHub.
+
+---
+
+### 🇺🇸 English
+- 🔄 **Automatic yt-dlp Self-Update:** The applet now automatically checks and downloads the latest `yt-dlp` version in the background on startup, ensuring continuous compatibility with YouTube changes without requiring manual applet updates.
+- ⚠️ **Update Notification on Failure:** If a download fails due to YouTube changes or extractor errors, the applet attempts to auto-update `yt-dlp` and notifies the user to retry.
+- 🔍 **Proactive Version Detection:** Checks installed `yt-dlp` version against the latest stable release from official GitHub releases.
+
+---
+
+### 🇪🇸 Español
+- 🔄 **Auto-Actualización Automática de yt-dlp:** La aplicación ahora verifica y descarga automáticamente la última versión de `yt-dlp` en segundo plano al iniciar.
+- ⚠️ **Notificación de Actualización en Caso de Fallo:** Si una descarga falla, la aplicación intenta actualizar `yt-dlp` automáticamente.
+- 🔍 **Detección Proactiva de Versiones:** Verificación de la versión instalada de `yt-dlp`.
+
+---
+
 ## 🚀 O que há de novo na v0.2.6 / What's New in v0.2.6
 
 ### 🇧🇷 Português

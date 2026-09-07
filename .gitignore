@@ -1,19 +1,54 @@
-debug/
+```
+# Build artifacts
 target/
 
-.cargo/
-vendor/
-vendor.tar
+# Dependencies
+Cargo.lock
 
-**/*.rs.bk
-
-*.pdb
-
-password.txt
+# Logs and temp files
 *.log
-consum*
+*.tmp
 
-# IDE / editor
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
 .vscode/
-.zcode/
 .idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+node_modules/
+
+# Compiled
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.class
+
+# Distribution / packaging
+.dist/
+build/
+*.egg-info/
+.eggs/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# OS generated
+.DS_Store
+Thumbs.db
+```
