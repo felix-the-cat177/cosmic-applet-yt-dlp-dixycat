@@ -185,10 +185,11 @@ pub async fn binaries() -> PathBuf {
         }
     }
 
-    // Keep yt-dlp updated to stable in the background
+    // Always check if yt-dlp needs update by comparing with latest release
     if youtube_path.exists() {
         let ytdlp_bin = youtube_path.clone();
         tokio::spawn(async move {
+            // Check for updates and apply if available
             let _ = tokio::process::Command::new(&ytdlp_bin)
                 .args(["--update-to", "stable"])
                 .output()

@@ -308,6 +308,32 @@ async fn run_download_job(
     let status = child.wait().await;
     cleanup_zero_and_temp_files(output_dir_ref).await;
 
+    // Check if download failed and attempt auto-update of yt-dlp
+    if !status.as_ref().map_or(false, |s| s.success()) {
+        let _ffmpeg_path = &downloader.libraries().ffmpeg;
+        let youtube_path = &downloader.libraries().youtube;
+        
+        // Attempt auto-update of yt-dlp when download fails
+        let update_result = tokio::process::Command::new(youtube_path)
+            .args(["--update-to", "stable"])
+            .output()
+            .await;
+        
+        if let Ok(update_out) = update_result {
+            if update_out.status.success() {
+                // Notify user that yt-dlp was updated and they should retry
+                let mut notify_update = notify.clone();
+                tokio::spawn(async move {
+                    let _ = notify_update
+                        .summary("yt-dlp atualizado")
+                        .body("O yt-dlp foi atualizado. Tente baixar novamente.")
+                        .show_async()
+                        .await;
+                });
+            }
+        }
+    }
+
     if status.map_or(false, |s| s.success()) {
         tokio::spawn(async move {
             let _ = notify.summary(&fl_str!("finished-download", title = display_title)).show_async().await;
@@ -762,7 +788,7 @@ impl Application for Ytdlp {
                 return Task::stream(cosmic::iced::stream::channel(
                     64,
                     move |mut output: cosmic::iced::futures::channel::mpsc::Sender<Action<Message>>| async move {
-                        let mut notify = Notification::new()
+                        let notify = Notification::new()
                             .appname("yt-dlp applet")
                             .icon("multimedia-video-player-symbolic")
                             .finalize();
