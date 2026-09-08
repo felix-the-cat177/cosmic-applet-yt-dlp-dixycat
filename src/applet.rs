@@ -31,9 +31,26 @@ fn parse_ytdlp_progress_line(line: &str) -> Option<(f32, f64, Option<u64>, u64, 
         return None;
     }
     let rest = line.strip_prefix("[download]")?.trim();
-    // Example: "45.2% of 12.34MiB at 2.45MiB/s ETA 00:03"
-    let pct_idx = rest.find('%')?;
-    let percent = rest[..pct_idx].trim().parse::<f32>().ok()?;
+    
+    // Handle various progress line formats
+    // Format 1: "45.2% of 12.34MiB at 2.45MiB/s ETA 00:03"
+    // Format 2: "Downloading ~ 45.2% of 12.34MiB at 2.45MiB/s ETA 00:03"
+    // Format 3: "45.2% at 2.45MiB/s ETA 00:03" (no total size yet)
+    // Format 4: "Already downloaded" (skip)
+    
+    if rest.contains("Already downloaded") || rest.contains("has already been downloaded") {
+        return Some((100.0, 0.0, Some(0), 0, 0));
+    }
+    
+    // Find percentage - handle both "XX.X%" and "~ XX.X%"
+    let pct_start = rest.find(|c: char| c.is_ascii_digit())?;
+    let pct_end = rest[pct_start..].find('%')? + pct_start;
+    let percent = rest[pct_start..pct_end].trim().parse::<f32>().ok()?;
+    
+    // Validate percentage is in reasonable range (avoid glitches)
+    if percent < 0.0 || percent > 100.0 {
+        return None;
+    }
 
     let mut speed_mbps = 0.0;
     if let Some(at_idx) = rest.find(" at ") {
@@ -216,6 +233,18 @@ async fn run_download_job(
         cmd.arg("--embed-metadata");
         if has_ffprobe {
             cmd.arg("--embed-thumbnail");
+            // Auto-embed subtitles if available (prefer VTT for MP4/WebM, ASS/SSA for MKV)
+            if video_container_ext == "mkv" {
+                cmd.arg("--write-sub");
+                cmd.arg("--write-auto-sub");
+                cmd.arg("--embed-subs");
+                cmd.arg("--sub-format").arg("ass/srt/best");
+            } else {
+                cmd.arg("--write-sub");
+                cmd.arg("--write-auto-sub");
+                cmd.arg("--embed-subs");
+                cmd.arg("--sub-format").arg("vtt/best");
+            }
         }
         cmd.arg("--add-metadata");
         cmd.arg("--parse-metadata").arg("%(uploader)s:%(artist)s");
