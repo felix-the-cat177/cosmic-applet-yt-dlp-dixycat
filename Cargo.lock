@@ -1044,6 +1044,7 @@ dependencies = [
  "notify-rust",
  "reqwest 0.12.28",
  "rust-embed",
+ "serde_json",
  "tokio",
  "url",
  "xdg 2.5.2",

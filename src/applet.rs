@@ -21,6 +21,9 @@ use notify_rust::Notification;
 use crate::formats::{AudioCodec, AudioQuality, VideoCodec, VideoContainer, VideoQuality};
 use crate::{fetcher, fl, fl_str};
 
+use reqwest;
+use serde_json;
+
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
@@ -472,6 +475,14 @@ pub struct Ytdlp {
     next_download_id: u32,
     cancel_senders: HashMap<u32, tokio::sync::oneshot::Sender<()>>,
     show_platforms: bool,
+    
+    // Economy mode for data saving
+    economy_mode: bool,
+    
+    // Update checking state
+    update_available: Option<ReleaseInfo>,
+    is_checking_updates: bool,
+    is_installing_update: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -510,6 +521,25 @@ pub enum Message {
     TogglePlatforms,
     /// Surface action forwarded from popup_dropdown
     SurfaceAction(cosmic::surface::Action),
+    /// Toggle economy mode for data saving
+    ToggleEconomyMode,
+    /// Check for updates from GitHub releases
+    CheckForUpdates,
+    /// Update check result
+    UpdateCheckResult(Result<Option<ReleaseInfo>, String>),
+    /// Install update with polkit
+    InstallUpdate,
+    /// Installation result
+    InstallResult(Result<(), String>),
+}
+
+/// Release information from GitHub API
+#[derive(Debug, Clone)]
+pub struct ReleaseInfo {
+    pub version: String,
+    pub tag_name: String,
+    pub download_url: String,
+    pub release_notes: String,
 }
 
 impl Application for Ytdlp {
@@ -892,6 +922,81 @@ impl Application for Ytdlp {
             Message::TogglePlatforms => {
                 self.show_platforms = !self.show_platforms;
             }
+            Message::ToggleEconomyMode => {
+                self.economy_mode = !self.economy_mode;
+            }
+            Message::CheckForUpdates => {
+                self.is_checking_updates = true;
+                return Task::perform(check_for_updates(), |result| {
+                    Action::App(Message::UpdateCheckResult(result))
+                });
+            }
+            Message::UpdateCheckResult(result) => {
+                self.is_checking_updates = false;
+                match result {
+                    Ok(Some(release)) => {
+                        self.update_available = Some(release);
+                    }
+                    Ok(None) => {
+                        // No update available, show notification
+                        tokio::spawn(async move {
+                            let mut binding = Notification::new();
+                            let notify = binding
+                                .appname("yt-dlp applet")
+                                .summary("Atualização")
+                                .body("Você já está usando a versão mais recente.");
+                            let _ = notify.show_async().await;
+                        });
+                    }
+                    Err(e) => {
+                        tokio::spawn(async move {
+                            let mut binding = Notification::new();
+                            let notify = binding
+                                .appname("yt-dlp applet")
+                                .summary("Erro ao verificar atualizações")
+                                .body(&e);
+                            let _ = notify.show_async().await;
+                        });
+                    }
+                }
+            }
+            Message::InstallUpdate => {
+                if let Some(ref release) = self.update_available {
+                    self.is_installing_update = true;
+                    let download_url = release.download_url.clone();
+                    return Task::perform(install_update(download_url), |result| {
+                        Action::App(Message::InstallResult(result))
+                    });
+                }
+            }
+            Message::InstallResult(result) => {
+                self.is_installing_update = false;
+                match result {
+                    Ok(()) => {
+                        tokio::spawn(async move {
+                            let mut binding = Notification::new();
+                            let notify = binding
+                                .appname("yt-dlp applet")
+                                .summary("Atualização instalada")
+                                .body("O applet será reiniciado automaticamente.");
+                            let _ = notify.show_async().await;
+                            
+                            // Restart the application
+                            std::process::exit(0);
+                        });
+                    }
+                    Err(e) => {
+                        tokio::spawn(async move {
+                            let mut binding = Notification::new();
+                            let notify = binding
+                                .appname("yt-dlp applet")
+                                .summary("Erro na instalação")
+                                .body(&e);
+                            let _ = notify.show_async().await;
+                        });
+                    }
+                }
+            }
         }
         Task::none()
     }
@@ -1213,4 +1318,145 @@ impl Ytdlp {
 
         col.padding([0, space_s]).into()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Update checking and installation functions
+// ---------------------------------------------------------------------------
+
+/// Checks GitHub releases for updates
+async fn check_for_updates() -> Result<Option<ReleaseInfo>, String> {
+    use tokio::io::AsyncReadExt;
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    let response = client
+        .get("https://api.github.com/repos/dixycat/cosmic-applet-yt-dlp-dixycat/releases/latest")
+        .header("User-Agent", "cosmic-applet-yt-dlp")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch releases: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("GitHub API returned status: {}", response.status()));
+    }
+    
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    
+    let tag_name = json["tag_name"]
+        .as_str()
+        .unwrap_or("v0.0.0")
+        .to_string();
+    
+    let current_version = env!("CARGO_PKG_VERSION");
+    let current_tag = format!("v{}", current_version);
+    
+    // Compare versions - simple string comparison for now
+    if tag_name <= current_tag {
+        return Ok(None);
+    }
+    
+    let version = tag_name.trim_start_matches('v').to_string();
+    let release_notes = json["body"]
+        .as_str()
+        .unwrap_or("")
+        .lines()
+        .take(5)
+        .collect::<Vec<_>>()
+        .join("\n");
+    
+    // Find the .deb download URL for the current architecture
+    let assets = json["assets"]
+        .as_array()
+        .ok_or("No assets found in release")?;
+    
+    let arch = std::env::consts::ARCH;
+    let deb_suffix = match arch {
+        "x86_64" => "amd64.deb",
+        "aarch64" => "arm64.deb",
+        _ => "amd64.deb",
+    };
+    
+    let download_url = assets
+        .iter()
+        .find(|asset| {
+            asset["name"]
+                .as_str()
+                .map(|name| name.ends_with(deb_suffix))
+                .unwrap_or(false)
+        })
+        .and_then(|asset| asset["browser_download_url"].as_str())
+        .ok_or("No .deb asset found for this architecture")?
+        .to_string();
+    
+    Ok(Some(ReleaseInfo {
+        version,
+        tag_name,
+        download_url,
+        release_notes,
+    }))
+}
+
+/// Downloads and installs update using polkit
+async fn install_update(download_url: String) -> Result<(), String> {
+    use std::io::Write;
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    let response = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download update: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("Download failed with status: {}", response.status()));
+    }
+    
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download: {}", e))?;
+    
+    // Save to temporary location
+    let temp_dir = std::env::temp_dir();
+    let deb_path = temp_dir.join("cosmic-applet-yt-dlp-update.deb");
+    
+    let mut file = std::fs::File::create(&deb_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    
+    file.write_all(&bytes)
+        .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    
+    drop(file);
+    
+    // Use polkit to install with elevated privileges
+    let deb_path_str = deb_path.to_string_lossy();
+    let output = tokio::process::Command::new("pkexec")
+        .arg("apt")
+        .arg("install")
+        .arg("-y")
+        .arg(&*deb_path_str)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute pkexec: {}. Make sure polkit is installed.", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Installation failed: {}", stderr));
+    }
+    
+    // Clean up temp file
+    let _ = std::fs::remove_file(&deb_path);
+    
+    Ok(())
 }

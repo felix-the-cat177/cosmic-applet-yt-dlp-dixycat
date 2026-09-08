@@ -1,9 +1,6 @@
 ```
-# Build artifacts
-target/
-
 # Dependencies
-Cargo.lock
+target/
 
 # Logs and temp files
 *.log
@@ -12,43 +9,5 @@ Cargo.lock
 # Environment
 .env
 .env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Node
-node_modules/
-
-# Compiled
-*.o
-*.obj
-*.exe
-*.dll
-*.so
-*.a
-*.class
-
-# Distribution / packaging
-.dist/
-build/
-*.egg-info/
-.eggs/
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-.mypy_cache/
-
-# OS generated
-.DS_Store
-Thumbs.db
+.env.*
 ```
