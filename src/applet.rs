@@ -146,6 +146,7 @@ async fn run_download_job(
     audio_ext: &str,
     video_quality: VideoQuality,
     audio_quality: AudioQuality,
+    economy_mode: bool,
     output: &mut cosmic::iced::futures::channel::mpsc::Sender<cosmic::Action<Message>>,
     mut notify: notify_rust::Notification,
 ) {
@@ -213,12 +214,21 @@ async fn run_download_job(
 
     if video_selected {
         // Video format selection
-        let format_filter = match video_quality {
-            VideoQuality::Highest => "bestvideo+bestaudio/best",
-            VideoQuality::FHD => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-            VideoQuality::HD => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-            VideoQuality::SD => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-            VideoQuality::Lowest => "worstvideo+worstaudio/worst",
+        let format_filter = if economy_mode {
+            // Economy mode: low resolution to save data
+            match video_quality {
+                VideoQuality::Highest | VideoQuality::FHD | VideoQuality::HD => "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                VideoQuality::SD => "bestvideo[height<=240]+bestaudio/best[height<=240]/best",
+                VideoQuality::Lowest => "worstvideo+worstaudio/worst",
+            }
+        } else {
+            match video_quality {
+                VideoQuality::Highest => "bestvideo+bestaudio/best",
+                VideoQuality::FHD => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                VideoQuality::HD => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                VideoQuality::SD => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                VideoQuality::Lowest => "worstvideo+worstaudio/worst",
+            }
         };
         cmd.arg("-f").arg(format_filter);
 
@@ -234,7 +244,7 @@ async fn run_download_job(
         }
         // Embed title, artist (uploader) and thumbnail cover into the video file
         cmd.arg("--embed-metadata");
-        if has_ffprobe {
+        if has_ffprobe && !economy_mode {
             cmd.arg("--embed-thumbnail");
             // Auto-embed subtitles if available (prefer VTT for MP4/WebM, ASS/SSA for MKV)
             if video_container_ext == "mkv" {
@@ -255,17 +265,26 @@ async fn run_download_job(
         // Audio extraction
         cmd.arg("-x");
         cmd.arg("--audio-format").arg(audio_ext);
-        let audio_q = match audio_quality {
-            AudioQuality::Best => "0",
-            AudioQuality::High => "2",
-            AudioQuality::Medium => "5",
-            AudioQuality::Low => "7",
-            AudioQuality::Worst => "9",
+        let audio_q = if economy_mode {
+            // Economy mode: lower bitrate to save data
+            match audio_quality {
+                AudioQuality::Best | AudioQuality::High => "5",
+                AudioQuality::Medium => "7",
+                AudioQuality::Low | AudioQuality::Worst => "9",
+            }
+        } else {
+            match audio_quality {
+                AudioQuality::Best => "0",
+                AudioQuality::High => "2",
+                AudioQuality::Medium => "5",
+                AudioQuality::Low => "7",
+                AudioQuality::Worst => "9",
+            }
         };
         cmd.arg("--audio-quality").arg(audio_q);
         // Embed title, artist, album art (thumbnail) into audio file
         cmd.arg("--embed-metadata");
-        if has_ffprobe {
+        if has_ffprobe && !economy_mode {
             cmd.arg("--embed-thumbnail");
         }
         cmd.arg("--add-metadata");
@@ -843,6 +862,7 @@ impl Application for Ytdlp {
                 let audio_ext = self.audio_codec.extension();
                 let video_quality = self.video_quality;
                 let audio_quality = self.audio_quality;
+                let economy_mode = self.economy_mode;
 
                 return Task::stream(cosmic::iced::stream::channel(
                     64,
@@ -872,6 +892,7 @@ impl Application for Ytdlp {
                                     audio_ext,
                                     video_quality,
                                     audio_quality,
+                                    economy_mode,
                                     &mut output,
                                     notify,
                                 ).await;
